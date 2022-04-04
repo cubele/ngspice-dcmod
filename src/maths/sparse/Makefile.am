@@ -12,7 +12,9 @@ libsparse_la_SOURCES = \
 	spoutput.c	\
 	spsmp.c		\
 	spsolve.c	\
-	sputils.c
+	sputils.c   \
+    gmres.c   \
+    gmres.h
 
 
 

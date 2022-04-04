@@ -593,8 +593,9 @@ spMultiply(MatrixPtr Matrix, RealVector RHS, RealVector Solution,
     /* Initialize Intermediate vector with reordered Solution vector. */
     Vector = Matrix->Intermediate;
     pExtOrder = &Matrix->IntToExtColMap[Matrix->Size];
-    for (I = Matrix->Size; I > 0; I--)
+    for (I = Matrix->Size; I > 0; I--) {
         Vector[I] = Solution[*(pExtOrder--)];
+    }
 
     pExtOrder = &Matrix->IntToExtRowMap[Matrix->Size];
     for (I = Matrix->Size; I > 0; I--)

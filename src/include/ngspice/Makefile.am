@@ -125,7 +125,6 @@ noinst_HEADERS = \
 	wallace.h	\
 	wincolornames.h	\
 	wstdio.h
-
 if SHARED_MODULE
 pkginclude_HEADERS = \
 	sharedspice.h

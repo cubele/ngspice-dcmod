@@ -444,6 +444,7 @@ extern void NIdestroy(CKTcircuit *);
 extern int NIinit(CKTcircuit  *);
 extern int NIintegrate(CKTcircuit *, double *, double *, double , int);
 extern int NIiter(CKTcircuit * , int);
+extern int NIiter_fast(CKTcircuit * , int);
 extern int NIpzMuller(PZtrial **, PZtrial *);
 extern int NIpzComplex(PZtrial **, PZtrial *);
 extern int NIpzSym(PZtrial **, PZtrial *);

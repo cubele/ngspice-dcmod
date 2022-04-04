@@ -748,7 +748,7 @@ resume:
 /* gtri - end - wbk - Set evt_step */
 #endif
 
-        converged = NIiter(ckt,ckt->CKTtranMaxIter);
+        converged = NIiter_fast(ckt,ckt->CKTtranMaxIter);
 
 #ifdef XSPICE
         if(ckt->evt->counts.num_insts > 0) {
