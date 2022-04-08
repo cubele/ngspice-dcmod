@@ -58,6 +58,8 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
         }
     }
 
+
+    //MatrixPtr Prec = getPreconditoner(ckt->CKTmatrix, ckt->CKTgmin);
     for (;;) {
 
         ckt->CKTnoncon = 0;
@@ -77,6 +79,7 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
                 printf("load returned error \n");
 #endif
                 FREE(OldCKTstate0);
+                //SMPdestroy(Prec);
                 return (error);
             }
 
@@ -87,7 +90,6 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
             memcpy(OldCKTstate0, ckt->CKTstate0,
                    (size_t) ckt->CKTnumStates * sizeof(double));
 
-#define orig
 #ifdef orig
             startTime = SPfrontEnd->IFseconds();
                 error = SMPluFac(ckt->CKTmatrix, ckt->CKTpivotAbsTol,
@@ -100,8 +102,14 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
                 SPfrontEnd->IFseconds() - startTime;
 #endif
 #ifndef orig
+            printf("iterno = %d\n", iterno);
             startTime = SPfrontEnd->IFseconds();
-            gmresSolve(ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhs);
+
+            MatrixPtr Prec = getPreconditoner(ckt->CKTmatrix, ckt->CKTdiagGmin);
+            gmresSolvePreconditoned(ckt->CKTmatrix, Prec, ckt->CKTrhs, ckt->CKTrhs, ckt->CKTdiagGmin);
+            SMPdestroy(Prec);
+            //gmresSolve(ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhs, ckt->CKTdiagGmin);
+
             ckt->CKTstat->STATsolveTime +=
                 SPfrontEnd->IFseconds() - startTime;
 #endif
@@ -122,6 +130,7 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
 #endif
                 }
                 FREE(OldCKTstate0);
+                //SMPdestroy(Prec);
                 return(E_ITERLIM);
             }
 
@@ -173,6 +182,7 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
             if (ckt->CKTnoncon == 0) {
                 ckt->CKTstat->STATnumIter += iterno;
                 FREE(OldCKTstate0);
+                //SMPdestroy(Prec);
                 return(OK);
             }
         } else if (ckt->CKTmode & MODEINITJCT) {
@@ -196,6 +206,7 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
             printf("bad initf state \n");
 #endif
             FREE(OldCKTstate0);
+            //SMPdestroy(Prec);
             return(E_INTERN);
             /* impossible - no such INITF flag! */
         }

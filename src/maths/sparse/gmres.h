@@ -1,3 +1,4 @@
 #include "ngspice/spmatrix.h"
 
-int gmresSolve(MatrixPtr Matrix, double *RHS, double *Solution);
+int gmresSolvePreconditoned(MatrixPtr Matrix, MatrixPtr Prec, double *RHS, double *Solution, double Gmin);
+MatrixPtr getPreconditoner(MatrixPtr Matrix, double Gmin);
