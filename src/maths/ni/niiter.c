@@ -20,7 +20,7 @@ Modified: 2001 AlansFixes
 #include "ngspice/sperror.h"
 #include "../sparse/gmres.h"
 
-int NIiter_fast(CKTcircuit *ckt, int maxIter)
+int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
 {
     double startTime, *OldCKTstate0 = NULL;
     int error, i, j;
@@ -58,8 +58,6 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
         }
     }
 
-
-    //MatrixPtr Prec = getPreconditoner(ckt->CKTmatrix, ckt->CKTgmin);
     for (;;) {
 
         ckt->CKTnoncon = 0;
@@ -79,7 +77,6 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
                 printf("load returned error \n");
 #endif
                 FREE(OldCKTstate0);
-                //SMPdestroy(Prec);
                 return (error);
             }
 
@@ -103,13 +100,30 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
 #endif
 #ifndef orig
             printf("iterno = %d\n", iterno);
+            int firstGMRES = 0;
+            if (arr->PrecNeedReset) {
+                printf("prec needed reset\n");
+                startTime = SPfrontEnd->IFseconds();
+                getPreconditoner(ckt->CKTmatrix, arr);
+                ckt->CKTstat->STATdecompTime += SPfrontEnd->IFseconds() - startTime;
+                arr->origiters = 0;
+                arr->totaliters = 0;
+                arr->GMREStime = 0;
+                firstGMRES = 1;
+            }
             startTime = SPfrontEnd->IFseconds();
-
-            MatrixPtr Prec = getPreconditoner(ckt->CKTmatrix, ckt->CKTdiagGmin);
-            gmresSolvePreconditoned(ckt->CKTmatrix, Prec, ckt->CKTrhs, ckt->CKTrhs, ckt->CKTdiagGmin);
-            SMPdestroy(Prec);
-            //gmresSolve(ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhs, ckt->CKTdiagGmin);
-
+            int iters = gmresSolvePreconditoned(arr, ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhs);
+            arr->totaliters += iters;
+            if (firstGMRES) {
+                arr->origiters = iters;
+            } else {
+                int idif = iters - arr->origiters;
+                if ((double)idif * (arr->GMREStime / iters) > arr->Prectime / 2) {
+                    printf("preconditioner reset after %d iters\n", arr->totaliters);
+                    printf("idif = %d, GMREStime = %g, Prectime = %g\n", idif, arr->GMREStime, arr->Prectime);
+                    arr->PrecNeedReset = 1;
+                }
+            }
             ckt->CKTstat->STATsolveTime +=
                 SPfrontEnd->IFseconds() - startTime;
 #endif
@@ -130,7 +144,6 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
 #endif
                 }
                 FREE(OldCKTstate0);
-                //SMPdestroy(Prec);
                 return(E_ITERLIM);
             }
 
@@ -182,7 +195,6 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
             if (ckt->CKTnoncon == 0) {
                 ckt->CKTstat->STATnumIter += iterno;
                 FREE(OldCKTstate0);
-                //SMPdestroy(Prec);
                 return(OK);
             }
         } else if (ckt->CKTmode & MODEINITJCT) {
@@ -206,7 +218,6 @@ int NIiter_fast(CKTcircuit *ckt, int maxIter)
             printf("bad initf state \n");
 #endif
             FREE(OldCKTstate0);
-            //SMPdestroy(Prec);
             return(E_INTERN);
             /* impossible - no such INITF flag! */
         }

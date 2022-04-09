@@ -4,24 +4,22 @@
 #include "ngspice/smpdefs.h"
 #include <math.h>
 #include <assert.h>
+#include <time.h>
 
 //Everything is 1-indexed!
 //calculate b = Ax
-void Mult(MatrixPtr A, RealVector x, RealVector b)
-{
+void Mult(MatrixPtr A, RealVector x, RealVector b) {
     spMultiply(A, b, x, NULL, NULL);
 }
 
-double Dot(RealVector x, RealVector y, int n)
-{
+double Dot(RealVector x, RealVector y, int n) {
     double result = 0.0;
     for (int i = 1; i <= n; i++)
         result += x[i] * y[i];
     return result;
 }
 
-double Norm(RealVector x, int n)
-{
+double Norm(RealVector x, int n) {
     double result = 0.0;
     for (int i = 1; i <= n; i++)
         result += x[i] * x[i];
@@ -29,91 +27,218 @@ double Norm(RealVector x, int n)
 }
 
 //calculate y = cx
-void VectorConstMult(RealVector x, double c, RealVector y, int n)
-{
+void VectorConstMult(RealVector x, double c, RealVector y, int n) {
     for (int i = 1; i <= n; i++)
         y[i] = c * x[i];
 }
 
 //calculate x = x + b*y
-void VectorAdd(RealVector x, RealVector y, double b, int n)
-{
+void VectorAdd(RealVector x, RealVector y, double b, int n) {
     for (int i = 1; i <= n; i++)
         x[i] += b * y[i];
 }
 
-void PrintVector(RealVector x, int n)
-{
+void PrintVector(RealVector x, int n) {
     for (int i = 1; i <= n; i++)
         printf("%f ", x[i]);
     printf("\n");
     fflush(stdout);
 }
 
-MatrixPtr getPreconditoner(MatrixPtr Matrix, double Gmin)
-{
-    int error = 0, n = Matrix->Size;
-    MatrixPtr Prec = NULL;
-    Prec = spCreate(n, 0, &error);
+void constructGMRES(GMRESarr *arr) {
+    arr->n = 0;
+    arr->hadPrec = 0;
+    arr->PrecNeedReset = 1;
+}
 
-    //inefficient way of copying the matrix
-    for (int I = 1; I <= n; I++)
-    {
-        int added = 0;
+void continuify(GMRESarr *arr) {
+    ElementPtr pElement;
+    RealNumber Temp;
+    int  I, Size;
+    ElementPtr pPivot;
+    MatrixPtr Matrix = arr->Prec;
+    int cnt = 0;
+
+    Size = Matrix->Size;
+
+    /* Forward elimination. Solves Lc = b.*/
+    for (I = 1; I <= Size; I++) {
+        pPivot = Matrix->Diag[I];
+        arr->Precarr[cnt++] = pPivot->Real;
+        pElement = pPivot->NextInCol;
+        while (pElement != NULL) {
+            arr->idx[cnt] = pElement->Row;
+            arr->Precarr[cnt++] = pElement->Real;
+            pElement = pElement->NextInCol;
+        }
+        arr->colind[I] = cnt;
+    }
+
+    /* Backward Substitution. Solves Ux = c.*/
+    for (I = Size; I > 0; I--) {
+        pElement = Matrix->Diag[I]->NextInRow;
+        while (pElement != NULL)
+        {
+            arr->idx[cnt] = pElement->Col;
+            arr->Precarr[cnt++] = pElement->Real;
+            pElement = pElement->NextInRow;
+        }
+        arr->rowind[I] = cnt;
+    }
+    assert(arr->Prec->Elements == cnt);
+}
+
+void getPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
+    int error = 0, n = Matrix->Size;
+    if (!arr->hadPrec) {
+        arr->Prec = spCreate(n, 0, &error);
+    } else {
+        SMPclear(arr->Prec);
+    }
+    clock_t start = clock();
+
+    for (int I = 1; I <= n; I++) {
         ElementPtr pElement = Matrix->FirstInCol[I];
         while (pElement != NULL)
         {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
-            SMPaddElt(Prec, Row, Col, pElement->Real);
-            added = 1;
+            SMPaddElt(arr->Prec, Row, Col, pElement->Real);
             pElement = pElement->NextInCol;
         }
     }
 
-    //SMPprint(Prec, "./Preconditoner.m");
-    //SMPprint(Matrix, "./Matrix.m");
+    error = SMPpreOrder(arr->Prec);
+    error = spOrderAndFactor(arr->Prec, NULL, Matrix->RelThreshold, Matrix->AbsThreshold, YES);
 
-    error = SMPluFac(Prec, 0, 0);
-    printf("luFac:%d\n", error);
-    return Prec;
+    if (!arr->hadPrec) {
+        arr->Precarr = SP_MALLOC(double, arr->Prec->Elements);
+        arr->idx = SP_MALLOC(int, arr->Prec->Elements);
+    }
+    continuify(arr);
+    clock_t end = clock();
+    arr->Prectime = (double) (end - start) / CLOCKS_PER_SEC;
+    arr->hadPrec = 1;
+    arr->PrecNeedReset = 0;
+    printf("Preconditioner time: %f\n", arr->Prectime);
+    fflush(stdout);
 }
 
-const int maxiter = 200;
-int gmresSolvePreconditoned(MatrixPtr Matrix, MatrixPtr Prec, double *RHS, double *Solution, double Gmin)
-{
-    if (Matrix->Complex) {
-        return 1;
+void initGMRES(GMRESarr *arr, int n) {
+    printf("initGMRES\n");
+    printf("n = %d\n", n);
+    fflush(stdout);
+    if (arr->n != 0)
+        return;
+    arr->n = n;
+    arr->x0 = SP_MALLOC(double, n + 1);
+    for (int i = 1; i <= n; i++)
+        arr->x0[i] = 0.0;
+    arr->r0 = SP_MALLOC(double, n + 1);
+    arr->w = SP_MALLOC(double, n + 1);
+    arr->q = SP_MALLOC(double, n + 1);
+    arr->colind = SP_MALLOC(int, n + 1);
+    arr->rowind = SP_MALLOC(int, n + 1);
+    for (int i = 0; i < GMRESmaxiter + 3; i++)
+        arr->v[i] = SP_MALLOC(double, n + 1);
+    for (int i = 1; i <= GMRESmaxiter + 1; ++i) {
+        for (int j = 1; j <= GMRESmaxiter + 1; ++j) {
+            arr->h[i][j] = 0;
+        }
+    }
+}
+
+void freeGMRES(GMRESarr *arr) {
+    if (arr->n == 0)
+        return;
+    SP_FREE(arr->x0);
+    SP_FREE(arr->r0);
+    SP_FREE(arr->w);
+    SP_FREE(arr->q);
+    SP_FREE(arr->colind);
+    SP_FREE(arr->rowind);
+    for (int i = 0; i < GMRESmaxiter + 3; i++)
+        SP_FREE(arr->v[i]);
+    SP_FREE(arr->Precarr);
+    SP_FREE(arr->idx);
+    arr->n = 0;
+}
+
+void fastSolve(GMRESarr *arr, RealVector RHS, RealVector Solution) {
+    RealVector Intermediate;
+    RealNumber Temp;
+    int I, *pExtOrder, Size;
+    MatrixPtr Matrix = arr->Prec;
+    int now = 0;
+
+    Intermediate = Matrix->Intermediate;
+    Size = Matrix->Size;
+
+    /* Initialize Intermediate vector. */
+    pExtOrder = &Matrix->IntToExtRowMap[Size];
+    for (I = Size; I > 0; I--)
+        Intermediate[I] = RHS[*(pExtOrder--)];
+
+    /* Forward elimination. Solves Lc = b.*/
+    for (I = 1; I <= Size; I++) {
+	/* This step of the elimination is skipped if Temp equals zero. */
+        if ((Temp = Intermediate[I]) != 0.0) {
+            Intermediate[I] = (Temp *= arr->Precarr[now++]);
+            while (now < arr->colind[I]) {
+		        Intermediate[arr->idx[now]] -= Temp * arr->Precarr[now];
+                ++now;
+            }
+        }
+        now = arr->colind[I];
     }
 
-    int n = Matrix->Size;
-    double eps = 1e-8;
+    /* Backward Substitution. Solves Ux = c.*/
+    for (I = Size; I > 0; I--) {
+	    Temp = Intermediate[I];
+        while (now < arr->rowind[I]) {
+	        Temp -= arr->Precarr[now] * Intermediate[arr->idx[now]];
+            ++now;
+        }
+        Intermediate[I] = Temp;
+        now = arr->rowind[I];
+    }
 
-    double *x0 = SP_MALLOC(double, n + 1);
-    for (int i = 1; i <= n; i++)
-        x0[i] = 0;
+    /* Unscramble Intermediate vector while placing data in to Solution vector. */
+    pExtOrder = &Matrix->IntToExtColMap[Size];
+    for (I = Size; I > 0; I--)
+        Solution[*(pExtOrder--)] = Intermediate[I];
 
+    return;
+}
+
+int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double *Solution)
+{
+    int n = Matrix->Size, iters = 0;
+    double eps = 1e-6;
+    double *x0 = arr->x0;
+
+    clock_t start = clock();
+    int maxiter = GMRESmaxiter;
     for (int reboot = 0; reboot < 1; reboot++) {
-        double h[maxiter + 3][maxiter + 3];
+        double **v = arr->v;
+        double *h[GMRESmaxiter + 3];
+        for (int i = 0; i < GMRESmaxiter + 3; i++)
+            h[i] = arr->h[i];
+        double *c = arr->c, *s = arr->s;
+        double *r0 = arr->r0;
+        double *w = arr->w;
+        double *q = arr->q;
         
-        double *r0 = SP_MALLOC(double, n + 1);
-        for (int i = 1; i <= n; i++)
-            r0[i] = 0.0;
-        double *v[maxiter + 3];
-        double c[maxiter + 3], s[maxiter + 3];
-        double *w = SP_MALLOC(double, n + 1);
-        for (int i = 1; i < maxiter + 3; i++)
-            v[i] = SP_MALLOC(double, n + 1);
-        double *q = SP_MALLOC(double, n + 1);
+        for (int i = 0; i <= n; i++)
+            r0[i] = 0.0, w[i] = 0.0, q[i] = 0.0;
         for (int i = 1; i <= n; i++)
             v[1][i] = r0[i];
-        for (int i = 1; i <= n; i++)
-            q[i] = 0, w[i] = 0;
         
         Mult(Matrix, x0, r0); //r0 = Ax0
         for (int i = 1; i <= n; i++)
             r0[i] = RHS[i] - r0[i]; //r0 = b - Ax0
-        SMPsolve(Prec, r0, r0); //r0 = (Prec)^{-1} r0
+        //SMPsolve(Prec, r0, r0); //r0 = (Prec)^{-1} r0
+        fastSolve(arr, r0, r0);
         double beta = Norm(r0, n);
 
         VectorConstMult(r0, 1.0 / beta, v[1], n); //v[1] = r0/beta
@@ -121,14 +246,11 @@ int gmresSolvePreconditoned(MatrixPtr Matrix, MatrixPtr Prec, double *RHS, doubl
 
         double relres = 0;
         int m = 0;
-        for (int i = 1; i <= m + 1; ++i) {
-            for (int j = 1; j <= m + 1; ++j) {
-                h[i][j] = 0;
-            }
-        }
         for (int j = 1; j <= maxiter; ++j) {
+            v[j + 1] = SP_MALLOC(double, n + 1);
             Mult(Matrix, v[j], w); //w[j] = Av[j]
-            SMPsolve(Prec, w, w); //w[j] = (Prec)^{-1} w[j]
+            //SMPsolve(Prec, w, w); //w[j] = (Prec)^{-1} w[j]
+            fastSolve(arr, w, w);
             for (int i = 1; i <= j; ++i) {
                 h[i][j] = Dot(v[i], w, n);
                 VectorAdd(w, v[i], -h[i][j], n);//w[j] = w[j] - h[i][j]v[i]
@@ -166,9 +288,8 @@ int gmresSolvePreconditoned(MatrixPtr Matrix, MatrixPtr Prec, double *RHS, doubl
             }
             m = j;
         }
-        printf("finished GMRES iters = %d\n", m);
-        fflush(stdout);
-        double y[maxiter + 3];
+        iters = MAX(m, iters);
+        double *y = arr->y;
 
         //solve h*y = q
         for (int i = m; i >= 1; --i) {
@@ -178,34 +299,24 @@ int gmresSolvePreconditoned(MatrixPtr Matrix, MatrixPtr Prec, double *RHS, doubl
             y[i] /= h[i][i];
         }
 
-        double *sol = SP_MALLOC(double, n + 1);
-        for (int i = 1; i <= n; i++)
-            sol[i] = x0[i];
+//        double *estb = SP_MALLOC(double, n + 1);
         for (int i = 1; i <= m; i++)
-            VectorAdd(sol, v[i], y[i], n);
-        double *estb = SP_MALLOC(double, n + 1);
-        Mult(Matrix, sol, estb);
-        double soldif = 0.0;
-        for (int i = 1; i <= n; i++)
-            soldif += (estb[i] - RHS[i]) * (estb[i] - RHS[i]);
-        soldif = sqrt(soldif);
-        printf("reboot = %d, soldif = %e\n", reboot, soldif);
-        printf("relres = %e\n", relres);
-        fflush(stdout);
-
-        for (int i = 1; i <= n; i++)
-            x0[i] = sol[i];
+            VectorAdd(x0, v[i], y[i], n);
+//        spSolveU(Prec, x0, x0);
+//        Mult(Matrix, sol, estb);
+//        double soldif = 0.0;
+//        for (int i = 1; i <= n; i++)
+//            soldif += (estb[i] - RHS[i]) * (estb[i] - RHS[i]);
+//        soldif = sqrt(soldif);
+//        printf("reboot = %d, soldif = %e\n", reboot, soldif);
+//        printf("relres = %e\n", relres);
+//        fflush(stdout);
         if (relres < eps)
             break;
-        SP_FREE(sol);
-        SP_FREE(w);
-        SP_FREE(q);
-        for (int i = 1; i < maxiter + 3; ++i)
-            SP_FREE(v[i]);
-        SP_FREE(r0);
     }
     for (int I = n; I > 0; I--)
         Solution[I] = x0[I];
-    SP_FREE(x0);
-    return 0;
+    clock_t end = clock();
+    arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
+    return iters;
 }

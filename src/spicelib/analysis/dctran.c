@@ -62,12 +62,13 @@ do { \
     ckt->CKTstat->STATtranSyncTime += ckt->CKTstat->STATsyncTime - startkTime; \
 } while(0)
 
-
 int
 DCtran(CKTcircuit *ckt,
        int restart)   /* forced restart flag */
 {
     TRANan *job = (TRANan *) ckt->CKTcurJob;
+    GMRESarr arr;
+    constructGMRES(&arr);
 
     int i;
     double olddelta;
@@ -748,7 +749,11 @@ resume:
 /* gtri - end - wbk - Set evt_step */
 #endif
 
-        converged = NIiter_fast(ckt,ckt->CKTtranMaxIter);
+        if (arr.n == 0) {
+            initGMRES(&arr, SMPmatSize(ckt->CKTmatrix));
+        }
+        converged = NIiter_fast(ckt, &arr, ckt->CKTtranMaxIter);
+        printf("converged = %d\n", converged);
 
 #ifdef XSPICE
         if(ckt->evt->counts.num_insts > 0) {
@@ -768,7 +773,8 @@ resume:
         }
         /* txl, cpl addition */
         if (converged == 1111) {
-                return(converged);
+            freeGMRES(&arr);
+            return(converged);
         }
 
         if(converged != 0) {
