@@ -88,27 +88,10 @@ void continuify(GMRESarr *arr) {
     assert(arr->Prec->Elements == cnt);
 }
 
-void getPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
-    int error = 0, n = Matrix->Size;
-    if (!arr->hadPrec) {
-        arr->Prec = spCreate(n, 0, &error);
-    } else {
-        SMPclear(arr->Prec);
-    }
+void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
     clock_t start = clock();
 
-    for (int I = 1; I <= n; I++) {
-        ElementPtr pElement = Matrix->FirstInCol[I];
-        while (pElement != NULL)
-        {
-            int Row = Matrix->IntToExtRowMap[pElement->Row];
-            int Col = Matrix->IntToExtColMap[I];
-            SMPaddElt(arr->Prec, Row, Col, pElement->Real);
-            pElement = pElement->NextInCol;
-        }
-    }
-
-    error = SMPpreOrder(arr->Prec);
+    int error = SMPpreOrder(arr->Prec);
     error = spOrderAndFactor(arr->Prec, NULL, Matrix->RelThreshold, Matrix->AbsThreshold, YES);
 
     if (!arr->hadPrec) {

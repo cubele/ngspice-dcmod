@@ -67,7 +67,20 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
 #endif
         {
 
-            error = CKTload(ckt);
+            int firstGMRES = 0;
+            if (arr->PrecNeedReset) {
+                printf("prec needed reset\n");
+                error = CKTloadPreconditioner(ckt, arr);
+                startTime = SPfrontEnd->IFseconds();
+                initPreconditoner(ckt->CKTmatrix, arr);
+                ckt->CKTstat->STATdecompTime += SPfrontEnd->IFseconds() - startTime;
+                arr->origiters = 0;
+                arr->totaliters = 0;
+                arr->GMREStime = 0;
+                firstGMRES = 1;
+            } else {
+                error = CKTload(ckt);
+            }
             /* printf("loaded, noncon is %d\n", ckt->CKTnoncon); */
             /* fflush(stdout); */
             iterno++;
@@ -100,17 +113,6 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
 #endif
 #ifndef orig
             printf("iterno = %d\n", iterno);
-            int firstGMRES = 0;
-            if (arr->PrecNeedReset) {
-                printf("prec needed reset\n");
-                startTime = SPfrontEnd->IFseconds();
-                getPreconditoner(ckt->CKTmatrix, arr);
-                ckt->CKTstat->STATdecompTime += SPfrontEnd->IFseconds() - startTime;
-                arr->origiters = 0;
-                arr->totaliters = 0;
-                arr->GMREStime = 0;
-                firstGMRES = 1;
-            }
             startTime = SPfrontEnd->IFseconds();
             int iters = gmresSolvePreconditoned(arr, ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhs);
             arr->totaliters += iters;

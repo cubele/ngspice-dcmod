@@ -350,6 +350,7 @@ extern int CKTinit(CKTcircuit **);
 extern int CKTinst2Node(CKTcircuit *, void *, int , CKTnode **, IFuid *);
 extern int CKTlinkEq(CKTcircuit *, CKTnode *);
 extern int CKTload(CKTcircuit *);
+extern int CKTloadPreconditioner(CKTcircuit *, GMRESarr *);
 extern int CKTmapNode(CKTcircuit *, CKTnode **, IFuid);
 extern int CKTmkCur(CKTcircuit  *, CKTnode **, IFuid , char *);
 extern int CKTmkNode(CKTcircuit *, CKTnode **);

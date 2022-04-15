@@ -749,11 +749,16 @@ resume:
 /* gtri - end - wbk - Set evt_step */
 #endif
 
-        if (arr.n == 0) {
-            initGMRES(&arr, SMPmatSize(ckt->CKTmatrix));
+        //I don't know if this is necessary
+        if (!firsttime || firsttime) {
+            if (arr.n == 0) {
+                initGMRES(&arr, SMPmatSize(ckt->CKTmatrix));
+            }
+            converged = NIiter_fast(ckt, &arr, ckt->CKTtranMaxIter);
+            printf("converged = %d\n", converged);
+        } else {
+            converged = NIiter(ckt, ckt->CKTtranMaxIter);
         }
-        converged = NIiter_fast(ckt, &arr, ckt->CKTtranMaxIter);
-        printf("converged = %d\n", converged);
 
 #ifdef XSPICE
         if(ckt->evt->counts.num_insts > 0) {

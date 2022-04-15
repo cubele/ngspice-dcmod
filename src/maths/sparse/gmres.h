@@ -24,7 +24,7 @@ typedef struct gmreselements {
 }GMRESarr;
 
 int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double *Solution);
-void getPreconditoner(MatrixPtr Matrix, GMRESarr *arr);
+void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr);
 void constructGMRES(GMRESarr *arr);
 void initGMRES(GMRESarr *arr, int n);
 void freeGMRES(GMRESarr *arr);
