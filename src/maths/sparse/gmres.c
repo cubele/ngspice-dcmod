@@ -1,6 +1,3 @@
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "ngspice/gmres.h"
 #include "ngspice/smpdefs.h"
 #include "ngspice/ngspice.h"
@@ -12,11 +9,8 @@ extern "C" {
 #include "ngspice/enh.h"
 #include "ngspice/mif.h"
 #endif
-#ifdef __cplusplus
-}
-#endif
 
-#include <graphops.hpp>
+#include "graphops.hpp"
 #include <math.h>
 #include <assert.h>
 #include <time.h>
@@ -165,6 +159,8 @@ void initGMRES(GMRESarr *arr, int n) {
             arr->h[i][j] = 0;
         }
     }
+
+    initGraph(&arr->G, n);
 }
 
 void freeGMRES(GMRESarr *arr) {
@@ -180,6 +176,7 @@ void freeGMRES(GMRESarr *arr) {
         SP_FREE(arr->v[i]);
     SP_FREE(arr->Precarr);
     SP_FREE(arr->idx);
+    deleteGraph(arr->G);
     arr->n = 0;
 }
 
@@ -359,10 +356,7 @@ static int ZeroNoncurRow(SMPmatrix *matrix, CKTnode *nodes, int rownum)
 }
 
 int isLinear(char *name) {
-    return 1;
-    if (strcmp(name, "Resistor") == 0 ||
-        strcmp(name, "Vsource") == 0 ||
-        strcmp(name, "Isource") == 0) {
+    if (strcmp(name, "Resistor") == 0) {
         return 1;
     } else {
         return 0;
@@ -397,35 +391,10 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
             error = DEVices[i]->DEVload (ckt->CKThead[i], ckt);
             if (ckt->CKTnoncon)
                 ckt->CKTtroubleNode = 0;
-            printf("device type %s\n",
-                       DEVices[i]->DEVpublic.name);
-#ifdef STEPDEBUG
-            if (noncon != ckt->CKTnoncon) {
-                printf("device type %s nonconvergence\n",
-                       DEVices[i]->DEVpublic.name);
-                noncon = ckt->CKTnoncon;
-            }
-#endif /* STEPDEBUG */
             if (error) return(error);
         }
     }
-    for (i = 0; i < DEVmaxnum; i++) {
-        if (DEVices[i] && DEVices[i]->DEVload && ckt->CKThead[i] && !isLinear(DEVices[i]->DEVpublic.name)) {
-            error = DEVices[i]->DEVload (ckt->CKThead[i], ckt);
-            if (ckt->CKTnoncon)
-                ckt->CKTtroubleNode = 0;
-            printf("device type %s\n",
-                       DEVices[i]->DEVpublic.name);
-#ifdef STEPDEBUG
-            if (noncon != ckt->CKTnoncon) {
-                printf("device type %s nonconvergence\n",
-                       DEVices[i]->DEVpublic.name);
-                noncon = ckt->CKTnoncon;
-            }
-#endif /* STEPDEBUG */
-            if (error) return(error);
-        }
-    }
+
     MatrixPtr Matrix = ckt->CKTmatrix;
     int n = Matrix->Size;
     if (!arr->hadPrec) {
@@ -433,16 +402,49 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     } else {
         SMPclear(arr->Prec);
     }
+
     for (int I = 1; I <= n; I++) {
         ElementPtr pElement = Matrix->FirstInCol[I];
         while (pElement != NULL)
         {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
-            SMPaddElt(arr->Prec, Row, Col, pElement->Real);
+            if (Row > Col && ABS(pElement->Real) > 1e-16) {
+                addEdge(arr->G, Row, Col, pElement->Row, I, pElement->Real);
+            } else if (Row == Col) {
+                setDiag(arr->G, Row, pElement->Real);
+            }
             pElement = pElement->NextInCol;
         }
     }
+
+    sparsify(arr->G);
+    graphToMatrix(arr->G, arr->Prec);
+
+    for (i = 0; i < DEVmaxnum; i++) {
+        if (DEVices[i] && DEVices[i]->DEVload && ckt->CKThead[i] && !isLinear(DEVices[i]->DEVpublic.name)) {
+            error = DEVices[i]->DEVload (ckt->CKThead[i], ckt);
+            if (ckt->CKTnoncon)
+                ckt->CKTtroubleNode = 0;
+            if (error) return(error);
+        }
+    }
+
+    for (int I = 1; I <= n; I++) {
+        ElementPtr pElement = Matrix->FirstInCol[I];
+        while (pElement != NULL)
+        {
+            int Row = Matrix->IntToExtRowMap[pElement->Row];
+            int Col = Matrix->IntToExtColMap[I];
+            double nv = checkEdge(arr->G, pElement->Row, I, pElement->Real);
+            if (ABS(nv) > 1e-16) {
+                SMPaddElt(arr->Prec, Row, Col, nv);
+            }
+            pElement = pElement->NextInCol;
+        }
+    }
+    clearGraph(arr->G);
+
 #ifdef XSPICE
     /* gtri - add - wbk - 11/26/90 - reset the MIF init flags */
 

@@ -7,9 +7,6 @@
 #define GMRESmaxiter (50)
 typedef struct GMRESarr GMRESarr;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 int gmresSolvePreconditoned(GMRESarr *, MatrixPtr, double *, double *);
 void initPreconditoner(MatrixPtr, GMRESarr *);
 void constructGMRES(GMRESarr **);
@@ -18,8 +15,5 @@ void freeGMRES(GMRESarr *);
 void continuify(GMRESarr *);
 int NIiter_fast(CKTcircuit *, GMRESarr *, int);
 int CKTloadPreconditioner(CKTcircuit *, GMRESarr *);
-#ifdef __cplusplus
-}
-#endif
 
 #endif
