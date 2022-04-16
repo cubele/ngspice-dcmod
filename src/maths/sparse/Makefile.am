@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in
 
-noinst_LTLIBRARIES = libsparse.la
+noinst_LTLIBRARIES = libsparse.la libgmres.la libgraphops.la
 
 libsparse_la_SOURCES = \
 	spalloc.c	\
@@ -12,12 +12,14 @@ libsparse_la_SOURCES = \
 	spoutput.c	\
 	spsmp.c		\
 	spsolve.c	\
-	sputils.c   \
-    gmres.c   \
-    gmres.h
+	sputils.c.
 
+libgmres_la_SOURCES = \
+	gmres.c
 
-
+libgraphops_la_SOURCES = \
+	graphops.hpp	\
+	graphops.cpp
 
 AM_CPPFLAGS = @AM_CPPFLAGS@ -I$(top_srcdir)/src/include
 AM_CFLAGS = $(STATIC)

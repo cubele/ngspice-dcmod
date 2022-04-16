@@ -182,6 +182,8 @@ ngspice_LDADD += \
 	maths/fft/libmathfft.la \
 	maths/poly/libpoly.la \
 	maths/ni/libni.la \
+	maths/sparse/libgmres.la \
+	maths/sparse/libgraphops.la \
 	maths/sparse/libsparse.la \
 	misc/libmisc.la
 
@@ -297,6 +299,8 @@ ngmultidec_SOURCES = ngmultidec.c
 ngmultidec_LDADD =  \
 	frontend/libfte.la \
 	frontend/parser/libparser.la \
+	maths/sparse/libgmres.la \
+	maths/sparse/libgraphops.la \
 	maths/sparse/libsparse.la \
 	misc/libmisc.la
 
@@ -459,6 +463,8 @@ libspice_la_LIBADD += \
 	maths/fft/libmathfft.la \
 	maths/poly/libpoly.la \
 	maths/ni/libni.la \
+	maths/sparse/libgmres.la \
+	maths/sparse/libgraphops.la \
 	maths/sparse/libsparse.la \
 	misc/libmisc.la \
 	$(LIBS)
@@ -573,6 +579,8 @@ libngspice_la_LIBADD += \
 	maths/fft/libmathfft.la \
 	maths/poly/libpoly.la \
 	maths/ni/libni.la \
+	maths/sparse/libgmres.la \
+	maths/sparse/libgraphops.la \
 	maths/sparse/libsparse.la \
 	misc/libmisc.la \
 	$(LIBS) \

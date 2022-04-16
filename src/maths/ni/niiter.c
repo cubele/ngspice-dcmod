@@ -18,7 +18,7 @@ Modified: 2001 AlansFixes
 #include "ngspice/cktdefs.h"
 #include "ngspice/smpdefs.h"
 #include "ngspice/sperror.h"
-#include "../sparse/gmres.h"
+#include "ngspice/gmres.h"
 
 int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
 {

@@ -1,10 +1,11 @@
 #include "ngspice/spmatrix.h"
+#include "ngspice/cktdefs.h"
 
 #ifndef GMRES_H
 #define GMRES_H
 
 #define GMRESmaxiter (50)
-typedef struct gmreselements {
+typedef struct {
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
     double c[GMRESmaxiter + 3], s[GMRESmaxiter + 3], y[GMRESmaxiter + 3];
     double *x0;
@@ -23,11 +24,19 @@ typedef struct gmreselements {
     int hadPrec, PrecNeedReset;
 }GMRESarr;
 
-int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double *Solution);
-void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr);
-void constructGMRES(GMRESarr *arr);
-void initGMRES(GMRESarr *arr, int n);
-void freeGMRES(GMRESarr *arr);
-void continuify(GMRESarr *arr);
+#ifdef __cplusplus
+extern "C" {
+#endif
+int gmresSolvePreconditoned(GMRESarr *, MatrixPtr, double *, double *);
+void initPreconditoner(MatrixPtr, GMRESarr *);
+void constructGMRES(GMRESarr *);
+void initGMRES(GMRESarr *, int);
+void freeGMRES(GMRESarr *);
+void continuify(GMRESarr *);
+int NIiter_fast(CKTcircuit *, GMRESarr *, int);
+int CKTloadPreconditioner(CKTcircuit *, GMRESarr *);
+#ifdef __cplusplus
+}
+#endif
 
 #endif

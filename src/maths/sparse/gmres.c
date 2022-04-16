@@ -1,7 +1,23 @@
-#include "gmres.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include "ngspice/gmres.h"
+#include "ngspice/smpdefs.h"
+#include "ngspice/ngspice.h"
+#include "ngspice/devdefs.h"
+#include "ngspice/sperror.h"
 #include "spdefs.h"
 #include "spconfig.h"
-#include "ngspice/smpdefs.h"
+#ifdef XSPICE
+#include "ngspice/enh.h"
+/* gtri - add - wbk - 11/26/90 - add include for MIF global data */
+#include "ngspice/mif.h"
+/* gtri - end - wbk - 11/26/90 */
+#endif
+#ifdef __cplusplus
+}
+#endif
+
 #include <math.h>
 #include <assert.h>
 #include <time.h>
@@ -302,4 +318,193 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double
     clock_t end = clock();
     arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
     return iters;
+}
+
+static int ZeroNoncurRow(SMPmatrix *matrix, CKTnode *nodes, int rownum)
+{
+    CKTnode     *n;
+    double      *x;
+    int         currents;
+    currents = 0;
+    for (n = nodes; n; n = n->next) {
+        x = (double *) SMPfindElt(matrix, rownum, n->number, 0);
+        if (x) {
+            if (n->type == SP_CURRENT)
+                currents = 1;
+            else
+                *x = 0.0;
+        }
+    }
+    return currents;
+}
+
+int isLinear(char *name) {
+    return 1;
+    if (strcmp(name, "Resistor") == 0 ||
+        strcmp(name, "Vsource") == 0 ||
+        strcmp(name, "Isource") == 0) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+//extract the linear components of the circuit while loading matrix
+int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
+    int i;
+    int size;
+    double startTime;
+    CKTnode *node;
+    int error;
+#ifdef XSPICE
+    /* gtri - begin - Put resistors to ground at all nodes */
+    /*   SMPmatrix  *matrix; maschmann : deleted , because unused */
+
+    double gshunt;
+    int num_nodes;
+
+    /* gtri - begin - Put resistors to ground at all nodes */
+#endif
+    startTime = SPfrontEnd->IFseconds();
+    size = SMPmatSize(ckt->CKTmatrix);
+    for (i = 0; i <= size; i++) {
+        ckt->CKTrhs[i] = 0;
+    }
+    SMPclear(ckt->CKTmatrix);
+    for (i = 0; i < DEVmaxnum; i++) {
+        if (DEVices[i] && DEVices[i]->DEVload && ckt->CKThead[i] && isLinear(DEVices[i]->DEVpublic.name)) {
+            error = DEVices[i]->DEVload (ckt->CKThead[i], ckt);
+            if (ckt->CKTnoncon)
+                ckt->CKTtroubleNode = 0;
+            printf("device type %s\n",
+                       DEVices[i]->DEVpublic.name);
+#ifdef STEPDEBUG
+            if (noncon != ckt->CKTnoncon) {
+                printf("device type %s nonconvergence\n",
+                       DEVices[i]->DEVpublic.name);
+                noncon = ckt->CKTnoncon;
+            }
+#endif /* STEPDEBUG */
+            if (error) return(error);
+        }
+    }
+    for (i = 0; i < DEVmaxnum; i++) {
+        if (DEVices[i] && DEVices[i]->DEVload && ckt->CKThead[i] && !isLinear(DEVices[i]->DEVpublic.name)) {
+            error = DEVices[i]->DEVload (ckt->CKThead[i], ckt);
+            if (ckt->CKTnoncon)
+                ckt->CKTtroubleNode = 0;
+            printf("device type %s\n",
+                       DEVices[i]->DEVpublic.name);
+#ifdef STEPDEBUG
+            if (noncon != ckt->CKTnoncon) {
+                printf("device type %s nonconvergence\n",
+                       DEVices[i]->DEVpublic.name);
+                noncon = ckt->CKTnoncon;
+            }
+#endif /* STEPDEBUG */
+            if (error) return(error);
+        }
+    }
+    MatrixPtr Matrix = ckt->CKTmatrix;
+    int n = Matrix->Size;
+    if (!arr->hadPrec) {
+        arr->Prec = spCreate(n, 0, &error);
+    } else {
+        SMPclear(arr->Prec);
+    }
+    for (int I = 1; I <= n; I++) {
+        ElementPtr pElement = Matrix->FirstInCol[I];
+        while (pElement != NULL)
+        {
+            int Row = Matrix->IntToExtRowMap[pElement->Row];
+            int Col = Matrix->IntToExtColMap[I];
+            SMPaddElt(arr->Prec, Row, Col, pElement->Real);
+            pElement = pElement->NextInCol;
+        }
+    }
+#ifdef XSPICE
+    /* gtri - add - wbk - 11/26/90 - reset the MIF init flags */
+
+    /* init is set by CKTinit and should be true only for first load call */
+    g_mif_info.circuit.init = MIF_FALSE;
+
+    /* anal_init is set by CKTdoJob and is true for first call */
+    /* of a particular analysis type */
+    g_mif_info.circuit.anal_init = MIF_FALSE;
+
+    /* gtri - end - wbk - 11/26/90 */
+
+    /* gtri - begin - Put resistors to ground at all nodes. */
+    /* Value of resistor is set by new "rshunt" option.     */
+
+    if (ckt->enh->rshunt_data.enabled) {
+        gshunt = ckt->enh->rshunt_data.gshunt;
+        num_nodes = ckt->enh->rshunt_data.num_nodes;
+        for (i = 0; i < num_nodes; i++) {
+            *(ckt->enh->rshunt_data.diag[i]) += gshunt;
+        }
+    }
+    /* gtri - end - Put resistors to ground at all nodes */
+#endif
+    if (ckt->CKTmode & MODEDC) {
+        /* consider doing nodeset & ic assignments */
+        if (ckt->CKTmode & (MODEINITJCT | MODEINITFIX)) {
+            /* do nodesets */
+            for (node = ckt->CKTnodes; node; node = node->next) {
+                if (node->nsGiven) {
+                    printf("node %s\n", node->name);
+                    if (ZeroNoncurRow(ckt->CKTmatrix, ckt->CKTnodes,
+                                      node->number)) {
+                        ckt->CKTrhs[node->number] = 1.0e10 * node->nodeset *
+                                                      ckt->CKTsrcFact;
+                        *(node->ptr) = 1e10;
+                    } else {
+                        ckt->CKTrhs[node->number] = node->nodeset *
+                                                      ckt->CKTsrcFact;
+                        *(node->ptr) = 1;
+                    }
+                    /* DAG: Original CIDER fix. If above fix doesn't work,
+                     * revert to this.
+                     */
+                    /*
+                     *  ckt->CKTrhs[node->number] += 1.0e10 * node->nodeset;
+                     *  *(node->ptr) += 1.0e10;
+                     */
+                }
+            }
+        }
+        if ((ckt->CKTmode & MODETRANOP) && (!(ckt->CKTmode & MODEUIC))) {
+            for (node = ckt->CKTnodes; node; node = node->next) {
+                if (node->icGiven) {
+                    printf("node %s\n", node->name);
+                    if (ZeroNoncurRow(ckt->CKTmatrix, ckt->CKTnodes,
+                                      node->number)) {
+                        /* Original code:
+                         ckt->CKTrhs[node->number] += 1.0e10 * node->ic;
+                        */
+                        ckt->CKTrhs[node->number] = 1.0e10 * node->ic *
+                                                      ckt->CKTsrcFact;
+                        *(node->ptr) += 1.0e10;
+                    } else {
+                        /* Original code:
+                          ckt->CKTrhs[node->number] = node->ic;
+                        */
+                        ckt->CKTrhs[node->number] = node->ic*ckt->CKTsrcFact; /* AlansFixes */
+                        *(node->ptr) = 1;
+                    }
+                    /* DAG: Original CIDER fix. If above fix doesn't work,
+                     * revert to this.
+                     */
+                    /*
+                     *  ckt->CKTrhs[node->number] += 1.0e10 * node->ic;
+                     *  *(node->ptr) += 1.0e10;
+                     */
+                }
+            }
+        }
+    }
+    /* SMPprint(ckt->CKTmatrix, stdout); if you want to debug, this is a
+    good place to start ... */
+    ckt->CKTstat->STATloadTime += SPfrontEnd->IFseconds()-startTime;
+    return(OK);
 }

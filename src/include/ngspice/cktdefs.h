@@ -32,9 +32,6 @@
 #include "ngspice/spmatrix.h"
 #include "ngspice/noisedef.h"
 #include "ngspice/hash.h"
-#include "../../maths/sparse/gmres.h"
-
-
 
 struct CKTnode {
     IFuid name;
@@ -350,7 +347,6 @@ extern int CKTinit(CKTcircuit **);
 extern int CKTinst2Node(CKTcircuit *, void *, int , CKTnode **, IFuid *);
 extern int CKTlinkEq(CKTcircuit *, CKTnode *);
 extern int CKTload(CKTcircuit *);
-extern int CKTloadPreconditioner(CKTcircuit *, GMRESarr *);
 extern int CKTmapNode(CKTcircuit *, CKTnode **, IFuid);
 extern int CKTmkCur(CKTcircuit  *, CKTnode **, IFuid , char *);
 extern int CKTmkNode(CKTcircuit *, CKTnode **);
@@ -447,7 +443,6 @@ extern void NIdestroy(CKTcircuit *);
 extern int NIinit(CKTcircuit  *);
 extern int NIintegrate(CKTcircuit *, double *, double *, double , int);
 extern int NIiter(CKTcircuit * , int);
-extern int NIiter_fast(CKTcircuit * , GMRESarr *, int);
 extern int NIpzMuller(PZtrial **, PZtrial *);
 extern int NIpzComplex(PZtrial **, PZtrial *);
 extern int NIpzSym(PZtrial **, PZtrial *);

@@ -49,6 +49,7 @@ noinst_HEADERS = \
 	fteparse.h	\
 	gendefs.h	\
 	gendev.h	\
+	gmres.h		\
 	graph.h		\
 	grid.h		\
 	hash.h		\

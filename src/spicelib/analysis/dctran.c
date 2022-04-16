@@ -14,6 +14,7 @@ Modified: 2000  AlansFixes
 #include "ngspice/sperror.h"
 #include "ngspice/fteext.h"
 #include "ngspice/missing_math.h"
+#include "ngspice/gmres.h"
 
 /* for setting breakpoints required by dbs data base */
 extern struct dbcomm *dbs;
