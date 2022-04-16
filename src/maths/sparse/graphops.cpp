@@ -1,4 +1,4 @@
-#include <cmath>
+#include <algorithm>
 #include "graphops.hpp"
 //ngspice header files written in C
 #ifdef __cplusplus

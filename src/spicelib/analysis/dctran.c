@@ -68,7 +68,7 @@ DCtran(CKTcircuit *ckt,
        int restart)   /* forced restart flag */
 {
     TRANan *job = (TRANan *) ckt->CKTcurJob;
-    GMRESarr arr;
+    GMRESarr *arr = NULL;
     constructGMRES(&arr);
 
     int i;
@@ -752,10 +752,8 @@ resume:
 
         //I don't know if this is necessary
         if (!firsttime || firsttime) {
-            if (arr.n == 0) {
-                initGMRES(&arr, SMPmatSize(ckt->CKTmatrix));
-            }
-            converged = NIiter_fast(ckt, &arr, ckt->CKTtranMaxIter);
+            initGMRES(arr, SMPmatSize(ckt->CKTmatrix));
+            converged = NIiter_fast(ckt, arr, ckt->CKTtranMaxIter);
             printf("converged = %d\n", converged);
         } else {
             converged = NIiter(ckt, ckt->CKTtranMaxIter);
@@ -779,7 +777,7 @@ resume:
         }
         /* txl, cpl addition */
         if (converged == 1111) {
-            freeGMRES(&arr);
+            freeGMRES(arr);
             return(converged);
         }
 

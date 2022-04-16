@@ -10,32 +10,52 @@ extern "C" {
 #include "spconfig.h"
 #ifdef XSPICE
 #include "ngspice/enh.h"
-/* gtri - add - wbk - 11/26/90 - add include for MIF global data */
 #include "ngspice/mif.h"
-/* gtri - end - wbk - 11/26/90 */
 #endif
 #ifdef __cplusplus
 }
 #endif
 
+#include <graphops.hpp>
 #include <math.h>
 #include <assert.h>
 #include <time.h>
 
+struct GMRESarr{
+    double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
+    double c[GMRESmaxiter + 3], s[GMRESmaxiter + 3], y[GMRESmaxiter + 3];
+    double *x0;
+    double *v[GMRESmaxiter + 3];
+    double *r0, *w, *q;
+    double *sol;
+    int n;
+
+    MatrixPtr Prec;
+    double *Precarr; //contiguous array for preconditioner to acclerate solving
+    int *idx;
+    int *rowind, *colind; //next row/col starts at colind[n]
+    int Lsize, Usize;
+    double GMREStime, Prectime;
+    int origiters, totaliters;
+    int hadPrec, PrecNeedReset;
+
+    graph *G;
+};
+
 //Everything is 1-indexed!
 //calculate b = Ax
-void Mult(MatrixPtr A, RealVector x, RealVector b) {
+void Mult(MatrixPtr A, double *x, double *b) {
     spMultiply(A, b, x, NULL, NULL);
 }
 
-double Dot(RealVector x, RealVector y, int n) {
+double Dot(double *x, double *y, int n) {
     double result = 0.0;
     for (int i = 1; i <= n; i++)
         result += x[i] * y[i];
     return result;
 }
 
-double Norm(RealVector x, int n) {
+double Norm(double *x, int n) {
     double result = 0.0;
     for (int i = 1; i <= n; i++)
         result += x[i] * x[i];
@@ -43,28 +63,29 @@ double Norm(RealVector x, int n) {
 }
 
 //calculate y = cx
-void VectorConstMult(RealVector x, double c, RealVector y, int n) {
+void VectorConstMult(double *x, double c, double *y, int n) {
     for (int i = 1; i <= n; i++)
         y[i] = c * x[i];
 }
 
 //calculate x = x + b*y
-void VectorAdd(RealVector x, RealVector y, double b, int n) {
+void VectorAdd(double *x, double *y, double b, int n) {
     for (int i = 1; i <= n; i++)
         x[i] += b * y[i];
 }
 
-void PrintVector(RealVector x, int n) {
+void PrintVector(double *x, int n) {
     for (int i = 1; i <= n; i++)
         printf("%f ", x[i]);
     printf("\n");
     fflush(stdout);
 }
 
-void constructGMRES(GMRESarr *arr) {
-    arr->n = 0;
-    arr->hadPrec = 0;
-    arr->PrecNeedReset = 1;
+void constructGMRES(GMRESarr **arr) {
+    *arr = SP_MALLOC(GMRESarr, 1);
+    (*arr)->n = 0;
+    (*arr)->hadPrec = 0;
+    (*arr)->PrecNeedReset = 1;
 }
 
 void continuify(GMRESarr *arr) {
@@ -124,11 +145,10 @@ void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
 }
 
 void initGMRES(GMRESarr *arr, int n) {
-    printf("initGMRES\n");
-    printf("n = %d\n", n);
-    fflush(stdout);
     if (arr->n != 0)
         return;
+    printf("initGMRES\n");
+    printf("n = %d\n", n);
     arr->n = n;
     arr->x0 = SP_MALLOC(double, n + 1);
     for (int i = 1; i <= n; i++)
@@ -163,8 +183,8 @@ void freeGMRES(GMRESarr *arr) {
     arr->n = 0;
 }
 
-void fastSolve(GMRESarr *arr, RealVector RHS, RealVector Solution) {
-    RealVector Intermediate;
+void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
+    double *Intermediate;
     RealNumber Temp;
     int I, *pExtOrder, Size;
     MatrixPtr Matrix = arr->Prec;
@@ -349,6 +369,7 @@ int isLinear(char *name) {
     }
 }
 
+#define FREE(x) do { if(x) { txfree(x); (x) = NULL; } } while(0)
 //extract the linear components of the circuit while loading matrix
 int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     int i;
@@ -507,4 +528,216 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     good place to start ... */
     ckt->CKTstat->STATloadTime += SPfrontEnd->IFseconds()-startTime;
     return(OK);
+}
+
+int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
+{
+    double startTime, *OldCKTstate0 = NULL;
+    int error, i, j;
+
+    int iterno = 0;
+    int ipass = 0;
+
+    /* some convergence issues that get resolved by increasing max iter */
+    if (maxIter < 100)
+        maxIter = 100;
+
+    if ((ckt->CKTmode & MODETRANOP) && (ckt->CKTmode & MODEUIC)) {
+        SWAP(double *, ckt->CKTrhs, ckt->CKTrhsOld);
+        error = CKTload(ckt);
+        if (error)
+            return(error);
+        return(OK);
+    }
+
+#ifdef WANT_SENSE2
+    if (ckt->CKTsenInfo) {
+        error = NIsenReinit(ckt);
+        if (error)
+            return(error);
+    }
+#endif
+
+    if (ckt->CKTniState & NIUNINITIALIZED) {
+        error = NIreinit(ckt);
+        if (error) {
+#ifdef STEPDEBUG
+            printf("re-init returned error \n");
+#endif
+            return(error);
+        }
+    }
+
+    for (;;) {
+
+        ckt->CKTnoncon = 0;
+
+#ifdef NEWPRED
+        if (!(ckt->CKTmode & MODEINITPRED))
+#endif
+        {
+
+            int firstGMRES = 0;
+            if (arr->PrecNeedReset) {
+                printf("prec needed reset\n");
+                error = CKTloadPreconditioner(ckt, arr);
+                startTime = SPfrontEnd->IFseconds();
+                initPreconditoner(ckt->CKTmatrix, arr);
+                ckt->CKTstat->STATdecompTime += SPfrontEnd->IFseconds() - startTime;
+                arr->origiters = 0;
+                arr->totaliters = 0;
+                arr->GMREStime = 0;
+                firstGMRES = 1;
+            } else {
+                error = CKTload(ckt);
+            }
+            /* printf("loaded, noncon is %d\n", ckt->CKTnoncon); */
+            /* fflush(stdout); */
+            iterno++;
+            if (error) {
+                ckt->CKTstat->STATnumIter += iterno;
+#ifdef STEPDEBUG
+                printf("load returned error \n");
+#endif
+                FREE(OldCKTstate0);
+                return (error);
+            }
+
+            /* moved it to here as if xspice is included then CKTload changes
+               CKTnumStates the first time it is run */
+            if (!OldCKTstate0)
+                OldCKTstate0 = TMALLOC(double, ckt->CKTnumStates + 1);
+            memcpy(OldCKTstate0, ckt->CKTstate0,
+                   (size_t) ckt->CKTnumStates * sizeof(double));
+
+#ifdef orig
+            startTime = SPfrontEnd->IFseconds();
+                error = SMPluFac(ckt->CKTmatrix, ckt->CKTpivotAbsTol,
+                                 ckt->CKTdiagGmin);
+                ckt->CKTstat->STATdecompTime +=
+                    SPfrontEnd->IFseconds() - startTime;
+            startTime = SPfrontEnd->IFseconds();
+            SMPsolve(ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhsSpare);
+            ckt->CKTstat->STATsolveTime +=
+                SPfrontEnd->IFseconds() - startTime;
+#endif
+#ifndef orig
+            printf("iterno = %d\n", iterno);
+            startTime = SPfrontEnd->IFseconds();
+            int iters = gmresSolvePreconditoned(arr, ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhs);
+            arr->totaliters += iters;
+            if (firstGMRES) {
+                arr->origiters = iters;
+            } else {
+                int idif = iters - arr->origiters;
+                if ((double)idif * (arr->GMREStime / iters) > arr->Prectime / 2) {
+                    printf("preconditioner reset after %d iters\n", arr->totaliters);
+                    printf("idif = %d, GMREStime = %g, Prectime = %g\n", idif, arr->GMREStime, arr->Prectime);
+                    arr->PrecNeedReset = 1;
+                }
+            }
+            ckt->CKTstat->STATsolveTime +=
+                SPfrontEnd->IFseconds() - startTime;
+#endif
+
+            ckt->CKTrhs[0] = 0;
+            ckt->CKTrhsSpare[0] = 0;
+            ckt->CKTrhsOld[0] = 0;
+
+            if (iterno > maxIter) {
+                ckt->CKTstat->STATnumIter += iterno;
+                /* we don't use this info during transient analysis */
+                if (ckt->CKTcurrentAnalysis != DOING_TRAN) {
+                    FREE(errMsg);
+                    errMsg = copy("Too many iterations without convergence");
+#ifdef STEPDEBUG
+                    fprintf(stderr, "too many iterations without convergence: %d iter's (max iter == %d)\n",
+                    iterno, maxIter);
+#endif
+                }
+                FREE(OldCKTstate0);
+                return(E_ITERLIM);
+            }
+
+            if ((ckt->CKTnoncon == 0) && (iterno != 1))
+                ckt->CKTnoncon = NIconvTest(ckt);
+            else
+                ckt->CKTnoncon = 1;
+
+#ifdef STEPDEBUG
+            printf("noncon is %d\n", ckt->CKTnoncon);
+#endif
+        }
+
+        if ((ckt->CKTnodeDamping != 0) && (ckt->CKTnoncon != 0) &&
+            ((ckt->CKTmode & MODETRANOP) || (ckt->CKTmode & MODEDCOP)) &&
+            (iterno > 1))
+        {
+            CKTnode *node;
+            double diff, maxdiff = 0;
+            for (node = ckt->CKTnodes->next; node; node = node->next)
+                if (node->type == SP_VOLTAGE) {
+                    diff = fabs(ckt->CKTrhs[node->number] - ckt->CKTrhsOld[node->number]);
+                    if (maxdiff < diff)
+                        maxdiff = diff;
+                }
+
+            if (maxdiff > 10) {
+                double damp_factor = 10 / maxdiff;
+                if (damp_factor < 0.1)
+                    damp_factor = 0.1;
+                for (node = ckt->CKTnodes->next; node; node = node->next) {
+                    diff = ckt->CKTrhs[node->number] - ckt->CKTrhsOld[node->number];
+                    ckt->CKTrhs[node->number] =
+                        ckt->CKTrhsOld[node->number] + (damp_factor * diff);
+                }
+                for (i = 0; i < ckt->CKTnumStates; i++) {
+                    diff = ckt->CKTstate0[i] - OldCKTstate0[i];
+                    ckt->CKTstate0[i] = OldCKTstate0[i] + (damp_factor * diff);
+                }
+            }
+        }
+
+        if (ckt->CKTmode & MODEINITFLOAT) {
+            if ((ckt->CKTmode & MODEDC) && ckt->CKThadNodeset) {
+                if (ipass)
+                    ckt->CKTnoncon = ipass;
+                ipass = 0;
+            }
+            if (ckt->CKTnoncon == 0) {
+                ckt->CKTstat->STATnumIter += iterno;
+                FREE(OldCKTstate0);
+                return(OK);
+            }
+        } else if (ckt->CKTmode & MODEINITJCT) {
+            ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFIX;
+            ckt->CKTniState |= NISHOULDREORDER;
+        } else if (ckt->CKTmode & MODEINITFIX) {
+            if (ckt->CKTnoncon == 0)
+                ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
+            ipass = 1;
+        } else if (ckt->CKTmode & MODEINITSMSIG) {
+            ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
+        } else if (ckt->CKTmode & MODEINITTRAN) {
+            if (iterno <= 1)
+                ckt->CKTniState |= NISHOULDREORDER;
+            ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
+        } else if (ckt->CKTmode & MODEINITPRED) {
+            ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
+        } else {
+            ckt->CKTstat->STATnumIter += iterno;
+#ifdef STEPDEBUG
+            printf("bad initf state \n");
+#endif
+            FREE(OldCKTstate0);
+            return(E_INTERN);
+            /* impossible - no such INITF flag! */
+        }
+
+        /* build up the lvnim1 array from the lvn array */
+        SWAP(double *, ckt->CKTrhs, ckt->CKTrhsOld);
+        /* printf("after loading, after solving\n"); */
+        /* CKTdump(ckt); */
+    }
+    /*NOTREACHED*/
 }
