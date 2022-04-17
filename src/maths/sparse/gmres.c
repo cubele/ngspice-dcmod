@@ -393,14 +393,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         }
     }
 
-    MatrixPtr Matrix = ckt->CKTmatrix;
-    int n = Matrix->Size;
-    if (!arr->hadPrec) {
-        arr->Prec = spCreate(n, 0, &error);
-    } else {
-        SMPclear(arr->Prec);
-    }
-
+    //load the linear part into graph
     for (int I = 1; I <= n; I++) {
         ElementPtr pElement = Matrix->FirstInCol[I];
         while (pElement != NULL)
@@ -508,8 +501,16 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         }
     }
 
+    MatrixPtr Matrix = ckt->CKTmatrix;
+    int n = Matrix->Size;
+    if (!arr->hadPrec) {
+        arr->Prec = spCreate(n, 0, &error);
+    } else {
+        SMPclear(arr->Prec);
+    }
+
     clock_t start = clock();
-    sparsify(arr->G);
+    sparsify(arr->G, 1);
     int nnz = graphToMatrix(arr->G, arr->Prec);
     printf("nnz in resistors: %d\n", nnz);
     int orignnz = 0;

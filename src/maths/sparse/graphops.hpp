@@ -57,10 +57,13 @@ struct graph {
     std::vector<std::vector<int>> adj;
     std::vector<std::vector<double>> w;
     std::vector<edge> alle, orige;
+    std::vector<std::vector<edge>> cande;
     int nowe;
-    std::vector<double> diag;
+    std::vector<double> diag, maxw, wd, swd;
+    std::vector<int> deg, list, order;
     void insEdge(edge e);
-    int sparsify();
+    int sparsify(double p);
+    void constructMST();
 };
 #else
 typedef struct edge edge;
@@ -74,7 +77,7 @@ void initGraph(graph **g, int n);
 void addEdge(graph *g, int u, int v, double w);
 void addOrigEdge(graph *g, int u, int v, double w);
 void deleteGraph(graph *g);
-int sparsify(graph *g);
+int sparsify(graph *g, double p);
 int graphToMatrix(graph *g, MatrixPtr Prec);
 void clearGraph(graph *g);
 void setDiag(graph *g, int Row, double diag);
