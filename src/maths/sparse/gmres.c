@@ -11,6 +11,7 @@
 #endif
 
 #include "graphops.hpp"
+#include "gmresutils.h"
 #include <math.h>
 #include <assert.h>
 #include <time.h>
@@ -35,45 +36,6 @@ struct GMRESarr{
 
     graph *G;
 };
-
-//Everything is 1-indexed
-//calculate b = Ax
-void Mult(MatrixPtr A, double *x, double *b) {
-    spMultiply(A, b, x, NULL, NULL);
-}
-
-double Dot(double *x, double *y, int n) {
-    double result = 0.0;
-    for (int i = 1; i <= n; i++)
-        result += x[i] * y[i];
-    return result;
-}
-
-double Norm(double *x, int n) {
-    double result = 0.0;
-    for (int i = 1; i <= n; i++)
-        result += x[i] * x[i];
-    return sqrt(result);
-}
-
-//calculate y = cx
-void VectorConstMult(double *x, double c, double *y, int n) {
-    for (int i = 1; i <= n; i++)
-        y[i] = c * x[i];
-}
-
-//calculate x = x + b*y
-void VectorAdd(double *x, double *y, double b, int n) {
-    for (int i = 1; i <= n; i++)
-        x[i] += b * y[i];
-}
-
-void PrintVector(double *x, int n) {
-    for (int i = 1; i <= n; i++)
-        printf("%f ", x[i]);
-    printf("\n");
-    fflush(stdout);
-}
 
 void constructGMRES(GMRESarr **arr) {
     *arr = SP_MALLOC(GMRESarr, 1);
@@ -251,8 +213,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double
         Mult(Matrix, x0, r0); //r0 = Ax0
         for (int i = 1; i <= n; i++)
             r0[i] = RHS[i] - r0[i]; //r0 = b - Ax0
-        //SMPsolve(Prec, r0, r0); //r0 = (Prec)^{-1} r0
-        fastSolve(arr, r0, r0);
+        fastSolve(arr, r0, r0); //r0 = (Prec)^{-1} r0
         double beta = Norm(r0, n);
 
         VectorConstMult(r0, 1.0 / beta, v[1], n); //v[1] = r0/beta
@@ -263,8 +224,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double
         for (int j = 1; j <= maxiter; ++j) {
             v[j + 1] = SP_MALLOC(double, n + 1);
             Mult(Matrix, v[j], w); //w[j] = Av[j]
-            //SMPsolve(Prec, w, w); //w[j] = (Prec)^{-1} w[j]
-            fastSolve(arr, w, w);
+            fastSolve(arr, w, w); //w[j] = (Prec)^{-1} w[j]
             for (int i = 1; i <= j; ++i) {
                 h[i][j] = Dot(v[i], w, n);
                 VectorAdd(w, v[i], -h[i][j], n);//w[j] = w[j] - h[i][j]v[i]
@@ -313,18 +273,8 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double
             y[i] /= h[i][i];
         }
 
-//        double *estb = SP_MALLOC(double, n + 1);
         for (int i = 1; i <= m; i++)
             VectorAdd(x0, v[i], y[i], n);
-//        spSolveU(Prec, x0, x0);
-//        Mult(Matrix, sol, estb);
-//        double soldif = 0.0;
-//        for (int i = 1; i <= n; i++)
-//            soldif += (estb[i] - RHS[i]) * (estb[i] - RHS[i]);
-//        soldif = sqrt(soldif);
-//        printf("reboot = %d, soldif = %e\n", reboot, soldif);
-//        printf("relres = %e\n", relres);
-//        fflush(stdout);
         if (relres < eps)
             break;
     }
@@ -393,6 +343,8 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         }
     }
 
+    MatrixPtr Matrix = ckt->CKTmatrix;
+    int n = Matrix->Size;
     //load the linear part into graph
     for (int I = 1; I <= n; I++) {
         ElementPtr pElement = Matrix->FirstInCol[I];
@@ -501,8 +453,6 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         }
     }
 
-    MatrixPtr Matrix = ckt->CKTmatrix;
-    int n = Matrix->Size;
     if (!arr->hadPrec) {
         arr->Prec = spCreate(n, 0, &error);
     } else {
