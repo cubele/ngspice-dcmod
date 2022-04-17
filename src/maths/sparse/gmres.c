@@ -36,7 +36,7 @@ struct GMRESarr{
     graph *G;
 };
 
-//Everything is 1-indexed!
+//Everything is 1-indexed
 //calculate b = Ax
 void Mult(MatrixPtr A, double *x, double *b) {
     spMultiply(A, b, x, NULL, NULL);
@@ -120,9 +120,8 @@ void continuify(GMRESarr *arr) {
 }
 
 void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
-    clock_t start = clock();
-
     int error = SMPpreOrder(arr->Prec);
+    clock_t start = clock();
     error = spOrderAndFactor(arr->Prec, NULL, Matrix->RelThreshold, Matrix->AbsThreshold, YES);
 
     if (!arr->hadPrec) {
@@ -131,11 +130,10 @@ void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
     }
     continuify(arr);
     clock_t end = clock();
-    arr->Prectime = (double) (end - start) / CLOCKS_PER_SEC;
+    arr->Prectime += (double) (end - start) / CLOCKS_PER_SEC;
     arr->hadPrec = 1;
     arr->PrecNeedReset = 0;
     printf("Preconditioner time: %f\n", arr->Prectime);
-    fflush(stdout);
 }
 
 void initGMRES(GMRESarr *arr, int n) {
@@ -410,16 +408,14 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
             if (Row > Col && ABS(pElement->Real) > 1e-16) {
-                addEdge(arr->G, Row, Col, pElement->Row, I, pElement->Real);
-            } else if (Row == Col) {
-                setDiag(arr->G, Row, pElement->Real);
+                addEdge(arr->G, Row, Col, pElement->Real);
+            }
+            if (ABS(pElement->Real) > 1e-16) {
+                addOrigEdge(arr->G, pElement->Row, I, pElement->Real);
             }
             pElement = pElement->NextInCol;
         }
     }
-
-    sparsify(arr->G);
-    graphToMatrix(arr->G, arr->Prec);
 
     for (i = 0; i < DEVmaxnum; i++) {
         if (DEVices[i] && DEVices[i]->DEVload && ckt->CKThead[i] && !isLinear(DEVices[i]->DEVpublic.name)) {
@@ -429,21 +425,6 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
             if (error) return(error);
         }
     }
-
-    for (int I = 1; I <= n; I++) {
-        ElementPtr pElement = Matrix->FirstInCol[I];
-        while (pElement != NULL)
-        {
-            int Row = Matrix->IntToExtRowMap[pElement->Row];
-            int Col = Matrix->IntToExtColMap[I];
-            double nv = checkEdge(arr->G, pElement->Row, I, pElement->Real);
-            if (ABS(nv) > 1e-16) {
-                SMPaddElt(arr->Prec, Row, Col, nv);
-            }
-            pElement = pElement->NextInCol;
-        }
-    }
-    clearGraph(arr->G);
 
 #ifdef XSPICE
     /* gtri - add - wbk - 11/26/90 - reset the MIF init flags */
@@ -526,8 +507,33 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
             }
         }
     }
-    /* SMPprint(ckt->CKTmatrix, stdout); if you want to debug, this is a
-    good place to start ... */
+
+    clock_t start = clock();
+    sparsify(arr->G);
+    int nnz = graphToMatrix(arr->G, arr->Prec);
+    printf("nnz in resistors: %d\n", nnz);
+    int orignnz = 0;
+    for (int I = 1; I <= n; I++) {
+        ElementPtr pElement = Matrix->FirstInCol[I];
+        while (pElement != NULL) {
+            int Row = Matrix->IntToExtRowMap[pElement->Row];
+            int Col = Matrix->IntToExtColMap[I];
+            if (ABS(pElement->Real) > 1e-16) {
+                orignnz++;
+                double nv = checkEdge(arr->G, pElement->Row, I, pElement->Real, &nnz);
+                if (ABS(nv) > 1e-16) {
+                    SMPaddElt(arr->Prec, Row, Col, nv);
+                }
+            }
+            pElement = pElement->NextInCol;
+        }
+    }
+    printf("nnz in precondtioner: %d\n", nnz);
+    printf("nnz in original matrix: %d\n", orignnz);
+    clearGraph(arr->G);
+    clock_t end = clock();
+    arr->Prectime = (double)(end - start) / CLOCKS_PER_SEC;
+
     ckt->CKTstat->STATloadTime += SPfrontEnd->IFseconds()-startTime;
     return(OK);
 }
@@ -632,7 +638,7 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                 arr->origiters = iters;
             } else {
                 int idif = iters - arr->origiters;
-                if ((double)idif * (arr->GMREStime / iters) > arr->Prectime / 2) {
+                if ((double)idif * (arr->GMREStime / iters) > arr->Prectime) {
                     printf("preconditioner reset after %d iters\n", arr->totaliters);
                     printf("idif = %d, GMREStime = %g, Prectime = %g\n", idif, arr->GMREStime, arr->Prectime);
                     arr->PrecNeedReset = 1;
