@@ -5,6 +5,7 @@
 extern "C" {
 #endif
     #include "ngspice/spmatrix.h"
+    #include "spdefs.h"
 #ifdef __cplusplus
 }
 #endif
@@ -14,7 +15,8 @@ extern "C" {
 struct edge {
     int u, v;
     double w;
-    edge(int u, int v, double w) : u(u), v(v), w(w) {}
+    bool sel;
+    edge(int u, int v, double w) : u(u), v(v), w(w), sel(false) {}
 };
 
 struct unionset {
@@ -61,8 +63,28 @@ struct graph {
     int nowe;
     std::vector<double> diag, maxw, wd, swd;
     std::vector<int> deg, list, order;
+    unionset *us;
+    graph(int n): n(n), m(0), nowe(0) {
+        adj.resize(n + 1);
+        w.resize(n + 1);
+        cande.resize(n + 1);
+        deg.resize(n + 1);
+        list.resize(n + 1);
+        order.resize(n + 1);
+        diag.resize(n + 1);
+        maxw.resize(n + 1);
+        wd.resize(n + 1);
+        swd.resize(n + 1);
+        alle.reserve(n + 1);
+        orige.reserve(n + 1);
+        us = new unionset(n);
+    }
+    ~graph() {
+        delete us;
+    }
     void insEdge(edge e);
     int sparsify(double p);
+    double findBestRatio(int sampleNum);
     void constructMST();
 };
 #else
@@ -81,6 +103,7 @@ int sparsify(graph *g, double p);
 int graphToMatrix(graph *g, MatrixPtr Prec);
 void clearGraph(graph *g);
 void setDiag(graph *g, int Row, double diag);
+double findBestRatio(graph *g, int sampleNum);
 double checkEdge(graph *g, int u, int v, double w, int *nnz);
 #ifdef __cplusplus
 }

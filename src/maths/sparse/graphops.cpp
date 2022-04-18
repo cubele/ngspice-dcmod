@@ -11,22 +11,7 @@ extern "C" {
 }
 
 void initGraph(graph **g, int n) {
-    *g = new graph;
-    (*g)->n = n;
-    (*g)->m = 0;
-    (*g)->adj.resize(n + 1);
-    (*g)->cande.resize(n + 1);
-    (*g)->w.resize(n + 1);
-    (*g)->diag.resize(n + 1);
-    (*g)->maxw.resize(n + 1);
-    (*g)->wd.resize(n + 1);
-    (*g)->deg.resize(n + 1);
-    (*g)->list.resize(n + 1);
-    (*g)->order.resize(n + 1);
-    (*g)->swd.resize(n + 1);
-    (*g)->alle.reserve(n + 1);
-    (*g)->orige.reserve(n + 1);
-    (*g)->nowe = 0;
+    *g = new graph(n);
 }
 
 void deleteGraph(graph *g) {
@@ -60,19 +45,20 @@ void graph::constructMST() {
     std::sort(alle.begin(), alle.end(), [](edge a, edge b) {
         return -a.w > -b.w;
     });
-    unionset *us = new unionset(n);
+    for (int i = 1; i <= n; ++i) {
+        us->parent[i] = i;
+        us->rank[i] = 0;
+    }
     for (int i = 0; i < alle.size(); i++) {
         if (us->find(alle[i].u) != us->find(alle[i].v)) {
             insEdge(alle[i]);
             us->merge(alle[i].u, alle[i].v);
-            alle[i].u = -1, alle[i].v = -1; //selected
+            alle[i].sel = true;
         }
     }
-    delete us;
 }
 
 int graph::sparsify(double p) {
-    printf("edges berore sparsify: %d\n", alle.size());
     for (int i = 1; i <= n; ++i) {
         diag[i] = 0, maxw[i] = 0, wd[i] = 0, deg[i] = 0;
         list[i] = i;
@@ -83,6 +69,7 @@ int graph::sparsify(double p) {
         deg[alle[i].u]++, deg[alle[i].v]++;
         maxw[alle[i].u] = std::max(maxw[alle[i].u], fabs(alle[i].w));
         maxw[alle[i].v] = std::max(maxw[alle[i].v], fabs(alle[i].w));
+        alle[i].sel = false;
     }
     for (int i = 1; i <= n; ++i) {
         if (deg[i] > 0) {
@@ -103,7 +90,7 @@ int graph::sparsify(double p) {
     constructMST();
     //edges not in MST
     for (int i = 0; i < alle.size(); i++) {
-        if (alle[i].u != -1) {
+        if (!alle[i].sel) {
             if (order[alle[i].u] > order[alle[i].v]) {
                 std::swap(alle[i].u, alle[i].v);
             }
@@ -133,12 +120,65 @@ int sparsify(graph *g, double p) {
     return g->sparsify(p);
 }
 
+double graph::findBestRatio(int sampleNum) {
+    for (int i = 1; i <= n; ++i) {
+        diag[i] = 0, maxw[i] = 0, wd[i] = 0, deg[i] = 0;
+    }
+    for (int i = 0; i < alle.size(); i++) {
+        diag[alle[i].u] += fabs(alle[i].w);
+        diag[alle[i].v] += fabs(alle[i].w);
+        deg[alle[i].u]++, deg[alle[i].v]++;
+        maxw[alle[i].u] = std::max(maxw[alle[i].u], fabs(alle[i].w));
+        maxw[alle[i].v] = std::max(maxw[alle[i].v], fabs(alle[i].w));
+    }
+    double awd = 0;
+    for (int i = 1; i <= n; ++i) {
+        if (deg[i] > 0) {
+            wd[i] = diag[i] / maxw[i];
+            awd += wd[i];
+        } else {
+            wd[i] = -1;
+            awd += 1;
+        }
+    }
+    awd /= n;
+    double minr = 1 / awd, maxr = 1, ratio = minr;
+    double maxdif = 0;
+    //temproary solution
+    return minr + (maxr - minr) / 18 * 15;
+    std::vector<double> nnz(sampleNum + 1);
+    for (int i = 1; i <= sampleNum; ++i) {
+        double r = minr + (maxr - minr) * (i - 1) / (sampleNum - 1);
+        nnz[i] = sparsify(r);
+        nnz[i] = nnz[i] * nnz[i];
+        for (int j = 1; j <= n; ++j) {
+            adj[j].clear();
+            w[j].clear();
+            cande[j].clear();
+            m = 0;
+        }
+        if (i > 1 && nnz[i] - nnz[i - 1] > maxdif) {
+            ratio = minr + (maxr - minr) * (i - 2) / (sampleNum - 1);
+            maxdif = nnz[i] - nnz[i - 1];
+        }
+    }
+    for (int i = 1; i <= sampleNum; ++i) {
+        printf("%.3lf ", nnz[i]);
+    }
+    printf("\n");
+    printf("%.6lf %.6lf %.6lf\n", minr, ratio, maxr);
+    return ratio;
+}
+
+double findBestRatio(graph *g, int sampleNum) {
+    return g->findBestRatio(sampleNum);
+}
+
 void clearGraph(graph *g) {
     for (int i = 1; i <= g->n; ++i) {
         g->adj[i].clear();
         g->w[i].clear();
         g->cande[i].clear();
-        g->diag[i] = 0;
     }
     g->alle.clear();
     g->orige.clear();

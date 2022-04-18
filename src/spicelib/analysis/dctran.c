@@ -750,14 +750,14 @@ resume:
 /* gtri - end - wbk - Set evt_step */
 #endif
 
-        //I don't know if this is necessary
-        if (!firsttime || firsttime) {
-            initGMRES(arr, SMPmatSize(ckt->CKTmatrix));
-            converged = NIiter_fast(ckt, arr, ckt->CKTtranMaxIter);
-            printf("converged = %d\n", converged);
-        } else {
-            converged = NIiter(ckt, ckt->CKTtranMaxIter);
-        }
+        initGMRES(arr, SMPmatSize(ckt->CKTmatrix));
+        converged = NIiter_fast(ckt, arr, ckt->CKTtranMaxIter);
+        if (ckt->CKTtime / ckt->CKTfinalTime * 100 < 10.0)
+            printf("%%%3.2lf\b\b\b\b\b", ckt->CKTtime / ckt->CKTfinalTime * 100);
+        else  if (ckt->CKTtime / ckt->CKTfinalTime * 100 < 100.0)
+            printf("%%%4.2lf\b\b\b\b\b\b", ckt->CKTtime / ckt->CKTfinalTime * 100);
+        else
+            printf("%%%5.2lf\b\b\b\b\b\b\b", ckt->CKTtime / ckt->CKTfinalTime * 100);
 
 #ifdef XSPICE
         if(ckt->evt->counts.num_insts > 0) {

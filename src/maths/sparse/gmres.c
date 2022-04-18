@@ -25,16 +25,18 @@ struct GMRESarr{
     double *sol;
     int n;
 
-    MatrixPtr Prec;
+    MatrixPtr Prec, Orig;
     double *Precarr; //contiguous array for preconditioner to acclerate solving
     int *idx;
+    int LUsize;
     int *rowind, *colind; //next row/col starts at colind[n]
     int Lsize, Usize;
     double GMREStime, Prectime;
-    int origiters, totaliters;
+    int origiters, totaliters, extraiters, totalrounds;
     int hadPrec, PrecNeedReset;
 
     graph *G;
+    double ratio;
 };
 
 void constructGMRES(GMRESarr **arr) {
@@ -82,14 +84,26 @@ void continuify(GMRESarr *arr) {
 }
 
 void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
-    int error = SMPpreOrder(arr->Prec);
+    int error;
+    if (!arr->hadPrec) {
+        error = SMPpreOrder(arr->Prec);
+    }
     clock_t start = clock();
+    error = SMPpreOrder(arr->Prec);
     error = spOrderAndFactor(arr->Prec, NULL, Matrix->RelThreshold, Matrix->AbsThreshold, YES);
 
     if (!arr->hadPrec) {
+        printf("New Preconditioner: %d\n", arr->Prec->Size);
+        arr->LUsize = arr->Prec->Elements;
         arr->Precarr = SP_MALLOC(double, arr->Prec->Elements);
         arr->idx = SP_MALLOC(int, arr->Prec->Elements);
+    } else if (arr->Prec->Elements > arr->LUsize) {
+        printf("Warning: GMRES preconditioner size increased from %d to %d\n", arr->LUsize, arr->Prec->Elements);
+        arr->LUsize = arr->Prec->Elements;
+        arr->Precarr = SP_REALLOC(arr->Precarr, double, arr->Prec->Elements);
+        arr->idx = SP_REALLOC(arr->idx, int, arr->Prec->Elements);
     }
+    printf("GMRES preconditioner size: %d %d\n", arr->LUsize, arr->Prec->Elements);
     continuify(arr);
     clock_t end = clock();
     arr->Prectime += (double) (end - start) / CLOCKS_PER_SEC;
@@ -120,6 +134,8 @@ void initGMRES(GMRESarr *arr, int n) {
         }
     }
 
+    int error;
+    arr->Orig = spCreate(n, 0, &error);
     initGraph(&arr->G, n);
 }
 
@@ -137,7 +153,7 @@ void freeGMRES(GMRESarr *arr) {
     SP_FREE(arr->Precarr);
     SP_FREE(arr->idx);
     deleteGraph(arr->G);
-    arr->n = 0;
+    SP_FREE(arr);
 }
 
 void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
@@ -187,13 +203,31 @@ void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
     return;
 }
 
-int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double *Solution)
-{
-    int n = Matrix->Size, iters = 0;
-    double eps = 1e-6;
-    double *x0 = arr->x0;
+void copyMatrix(MatrixPtr Matrix, MatrixPtr dest) {
+    int error, n = Matrix->Size;
+    for (int I = 1; I <= n; I++) {
+        ElementPtr pElement = Matrix->FirstInCol[I];
+        while (pElement != NULL)
+        {
+            int Row = Matrix->IntToExtRowMap[pElement->Row];
+            int Col = Matrix->IntToExtColMap[I];
+            if (ABS(pElement->Real) > 1e-16) {
+                SMPaddElt(dest, Row, Col, pElement->Real);
+            }
+            pElement = pElement->NextInCol;
+        }
+    }
+}
 
+int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double *RHS, double *Solution)
+{
     clock_t start = clock();
+    //original matrix may contain spaces reserved for LUfac
+    copyMatrix(origMatrix, arr->Orig);
+    MatrixPtr Matrix = arr->Orig;
+    int n = Matrix->Size, iters = 0;
+    double eps = 1e-8;
+    double *x0 = arr->x0;
     int maxiter = GMRESmaxiter;
     for (int reboot = 0; reboot < 1; reboot++) {
         double **v = arr->v;
@@ -262,7 +296,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double
             }
             m = j;
         }
-        iters = MAX(m, iters);
+        iters += m;
         double *y = arr->y;
 
         //solve h*y = q
@@ -280,8 +314,10 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr Matrix, double *RHS, double
     }
     for (int I = n; I > 0; I--)
         Solution[I] = x0[I];
+    SMPclear(arr->Orig);
     clock_t end = clock();
     arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
+    printf("iters: %d\n", iters);
     return iters;
 }
 
@@ -320,13 +356,8 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     CKTnode *node;
     int error;
 #ifdef XSPICE
-    /* gtri - begin - Put resistors to ground at all nodes */
-    /*   SMPmatrix  *matrix; maschmann : deleted , because unused */
-
     double gshunt;
     int num_nodes;
-
-    /* gtri - begin - Put resistors to ground at all nodes */
 #endif
     startTime = SPfrontEnd->IFseconds();
     size = SMPmatSize(ckt->CKTmatrix);
@@ -372,20 +403,8 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     }
 
 #ifdef XSPICE
-    /* gtri - add - wbk - 11/26/90 - reset the MIF init flags */
-
-    /* init is set by CKTinit and should be true only for first load call */
     g_mif_info.circuit.init = MIF_FALSE;
-
-    /* anal_init is set by CKTdoJob and is true for first call */
-    /* of a particular analysis type */
     g_mif_info.circuit.anal_init = MIF_FALSE;
-
-    /* gtri - end - wbk - 11/26/90 */
-
-    /* gtri - begin - Put resistors to ground at all nodes. */
-    /* Value of resistor is set by new "rshunt" option.     */
-
     if (ckt->enh->rshunt_data.enabled) {
         gshunt = ckt->enh->rshunt_data.gshunt;
         num_nodes = ckt->enh->rshunt_data.num_nodes;
@@ -393,7 +412,6 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
             *(ckt->enh->rshunt_data.diag[i]) += gshunt;
         }
     }
-    /* gtri - end - Put resistors to ground at all nodes */
 #endif
     if (ckt->CKTmode & MODEDC) {
         /* consider doing nodeset & ic assignments */
@@ -412,13 +430,6 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
                                                       ckt->CKTsrcFact;
                         *(node->ptr) = 1;
                     }
-                    /* DAG: Original CIDER fix. If above fix doesn't work,
-                     * revert to this.
-                     */
-                    /*
-                     *  ckt->CKTrhs[node->number] += 1.0e10 * node->nodeset;
-                     *  *(node->ptr) += 1.0e10;
-                     */
                 }
             }
         }
@@ -428,26 +439,13 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
                     printf("node %s\n", node->name);
                     if (ZeroNoncurRow(ckt->CKTmatrix, ckt->CKTnodes,
                                       node->number)) {
-                        /* Original code:
-                         ckt->CKTrhs[node->number] += 1.0e10 * node->ic;
-                        */
                         ckt->CKTrhs[node->number] = 1.0e10 * node->ic *
                                                       ckt->CKTsrcFact;
                         *(node->ptr) += 1.0e10;
                     } else {
-                        /* Original code:
-                          ckt->CKTrhs[node->number] = node->ic;
-                        */
                         ckt->CKTrhs[node->number] = node->ic*ckt->CKTsrcFact; /* AlansFixes */
                         *(node->ptr) = 1;
                     }
-                    /* DAG: Original CIDER fix. If above fix doesn't work,
-                     * revert to this.
-                     */
-                    /*
-                     *  ckt->CKTrhs[node->number] += 1.0e10 * node->ic;
-                     *  *(node->ptr) += 1.0e10;
-                     */
                 }
             }
         }
@@ -455,13 +453,16 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
 
     if (!arr->hadPrec) {
         arr->Prec = spCreate(n, 0, &error);
+        arr->ratio = findBestRatio(arr->G, 20);
+        printf("ratio = %f\n", arr->ratio);
     } else {
         SMPclear(arr->Prec);
+        //SMPdestroy(arr->Prec);
     }
 
-    clock_t start = clock();
-    sparsify(arr->G, 1);
+    sparsify(arr->G, arr->ratio);
     int nnz = graphToMatrix(arr->G, arr->Prec);
+    clock_t start = clock();
     printf("nnz in resistors: %d\n", nnz);
     int orignnz = 0;
     for (int I = 1; I <= n; I++) {
@@ -520,17 +521,12 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
     if (ckt->CKTniState & NIUNINITIALIZED) {
         error = NIreinit(ckt);
         if (error) {
-#ifdef STEPDEBUG
-            printf("re-init returned error \n");
-#endif
             return(error);
         }
     }
 
     for (;;) {
-
         ckt->CKTnoncon = 0;
-
 #ifdef NEWPRED
         if (!(ckt->CKTmode & MODEINITPRED))
 #endif
@@ -550,20 +546,13 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             } else {
                 error = CKTload(ckt);
             }
-            /* printf("loaded, noncon is %d\n", ckt->CKTnoncon); */
-            /* fflush(stdout); */
             iterno++;
             if (error) {
                 ckt->CKTstat->STATnumIter += iterno;
-#ifdef STEPDEBUG
-                printf("load returned error \n");
-#endif
                 FREE(OldCKTstate0);
                 return (error);
             }
 
-            /* moved it to here as if xspice is included then CKTload changes
-               CKTnumStates the first time it is run */
             if (!OldCKTstate0)
                 OldCKTstate0 = TMALLOC(double, ckt->CKTnumStates + 1);
             memcpy(OldCKTstate0, ckt->CKTstate0,
@@ -575,6 +564,7 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                                  ckt->CKTdiagGmin);
                 ckt->CKTstat->STATdecompTime +=
                     SPfrontEnd->IFseconds() - startTime;
+            printf("decomp time = %g\n", SPfrontEnd->IFseconds() - startTime);
             startTime = SPfrontEnd->IFseconds();
             SMPsolve(ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhsSpare);
             ckt->CKTstat->STATsolveTime +=
@@ -587,11 +577,20 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             arr->totaliters += iters;
             if (firstGMRES) {
                 arr->origiters = iters;
+                arr->extraiters = 0;
+                arr->totalrounds = 1;
             } else {
                 int idif = iters - arr->origiters;
-                if ((double)idif * (arr->GMREStime / iters) > arr->Prectime) {
+                if (idif > 0) {
+                    arr->extraiters += idif;
+                }
+                ++arr->totalrounds;
+                int reducediters = idif * arr->totalrounds - arr->extraiters;
+                double itertime = arr->GMREStime / (double)arr->totaliters;
+                if (iters == GMRESmaxiter || itertime * idif > arr->Prectime || itertime * reducediters > arr->Prectime) {
                     printf("preconditioner reset after %d iters\n", arr->totaliters);
                     printf("idif = %d, GMREStime = %g, Prectime = %g\n", idif, arr->GMREStime, arr->Prectime);
+                    printf("itertime = %g, reducediters = %d\n", itertime, reducediters);
                     arr->PrecNeedReset = 1;
                 }
             }
@@ -609,23 +608,14 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                 if (ckt->CKTcurrentAnalysis != DOING_TRAN) {
                     FREE(errMsg);
                     errMsg = copy("Too many iterations without convergence");
-#ifdef STEPDEBUG
-                    fprintf(stderr, "too many iterations without convergence: %d iter's (max iter == %d)\n",
-                    iterno, maxIter);
-#endif
                 }
                 FREE(OldCKTstate0);
                 return(E_ITERLIM);
             }
-
             if ((ckt->CKTnoncon == 0) && (iterno != 1))
                 ckt->CKTnoncon = NIconvTest(ckt);
             else
                 ckt->CKTnoncon = 1;
-
-#ifdef STEPDEBUG
-            printf("noncon is %d\n", ckt->CKTnoncon);
-#endif
         }
 
         if ((ckt->CKTnodeDamping != 0) && (ckt->CKTnoncon != 0) &&
@@ -685,18 +675,12 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
         } else {
             ckt->CKTstat->STATnumIter += iterno;
-#ifdef STEPDEBUG
-            printf("bad initf state \n");
-#endif
             FREE(OldCKTstate0);
             return(E_INTERN);
             /* impossible - no such INITF flag! */
         }
 
-        /* build up the lvnim1 array from the lvn array */
         SWAP(double *, ckt->CKTrhs, ckt->CKTrhsOld);
-        /* printf("after loading, after solving\n"); */
-        /* CKTdump(ckt); */
     }
     /*NOTREACHED*/
 }
