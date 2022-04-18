@@ -203,22 +203,6 @@ void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
     return;
 }
 
-void copyMatrix(MatrixPtr Matrix, MatrixPtr dest) {
-    int error, n = Matrix->Size;
-    for (int I = 1; I <= n; I++) {
-        ElementPtr pElement = Matrix->FirstInCol[I];
-        while (pElement != NULL)
-        {
-            int Row = Matrix->IntToExtRowMap[pElement->Row];
-            int Col = Matrix->IntToExtColMap[I];
-            if (ABS(pElement->Real) > 1e-16) {
-                SMPaddElt(dest, Row, Col, pElement->Real);
-            }
-            pElement = pElement->NextInCol;
-        }
-    }
-}
-
 int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double *RHS, double *Solution)
 {
     clock_t start = clock();
