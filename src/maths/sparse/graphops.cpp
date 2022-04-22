@@ -144,8 +144,6 @@ double graph::findBestRatio(int sampleNum) {
     awd /= n;
     double minr = 1 / awd, maxr = 1, ratio = minr;
     double maxdif = 0;
-    //temproary solution
-    return minr + (maxr - minr) / 18 * 15;
     std::vector<double> nnz(sampleNum + 1);
     for (int i = 1; i <= sampleNum; ++i) {
         double r = minr + (maxr - minr) * (i - 1) / (sampleNum - 1);

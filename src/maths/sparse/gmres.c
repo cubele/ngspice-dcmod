@@ -88,9 +88,14 @@ void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
     if (!arr->hadPrec) {
         error = SMPpreOrder(arr->Prec);
     }
+    printf("Preconditoner constructing\n");
     clock_t start = clock();
     error = SMPpreOrder(arr->Prec);
+    printf("preorder: %d\n", error);
+    fflush(stdout);
     error = spOrderAndFactor(arr->Prec, NULL, Matrix->RelThreshold, Matrix->AbsThreshold, YES);
+    printf("factor: %d\n", error);
+    fflush(stdout);
 
     if (!arr->hadPrec) {
         printf("New Preconditioner: %d\n", arr->Prec->Size);
@@ -210,7 +215,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double *RHS, do
     copyMatrix(origMatrix, arr->Orig);
     MatrixPtr Matrix = arr->Orig;
     int n = Matrix->Size, iters = 0;
-    double eps = 1e-8;
+    double eps = 1e-6;
     double *x0 = arr->x0;
     int maxiter = GMRESmaxiter;
     for (int reboot = 0; reboot < 1; reboot++) {
@@ -437,7 +442,8 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
 
     if (!arr->hadPrec) {
         arr->Prec = spCreate(n, 0, &error);
-        arr->ratio = findBestRatio(arr->G, 20);
+        arr->ratio = findBestRatio(arr->G, 50);
+        //arr->ratio = 0.90;
         printf("ratio = %f\n", arr->ratio);
     } else {
         SMPclear(arr->Prec);
@@ -558,6 +564,7 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             printf("iterno = %d\n", iterno);
             startTime = SPfrontEnd->IFseconds();
             int iters = gmresSolvePreconditoned(arr, ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhs);
+            printf("GMRES time = %g\n", SPfrontEnd->IFseconds() - startTime);
             arr->totaliters += iters;
             if (firstGMRES) {
                 arr->origiters = iters;
@@ -571,7 +578,7 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                 ++arr->totalrounds;
                 int reducediters = idif * arr->totalrounds - arr->extraiters;
                 double itertime = arr->GMREStime / (double)arr->totaliters;
-                if (iters == GMRESmaxiter || itertime * idif > arr->Prectime || itertime * reducediters > arr->Prectime) {
+                if (iters > 0.8 * GMRESmaxiter || itertime * idif > arr->Prectime || itertime * reducediters > arr->Prectime) {
                     printf("preconditioner reset after %d iters\n", arr->totaliters);
                     printf("idif = %d, GMREStime = %g, Prectime = %g\n", idif, arr->GMREStime, arr->Prectime);
                     printf("itertime = %g, reducediters = %d\n", itertime, reducediters);

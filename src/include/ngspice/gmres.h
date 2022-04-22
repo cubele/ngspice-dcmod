@@ -4,7 +4,7 @@
 #ifndef GMRES_H
 #define GMRES_H
 
-#define GMRESmaxiter (70)
+#define GMRESmaxiter (100)
 typedef struct GMRESarr GMRESarr;
 
 int gmresSolvePreconditoned(GMRESarr *, MatrixPtr, double *, double *);
