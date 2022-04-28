@@ -245,7 +245,6 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double *RHS, do
         double relres = 0;
         int m = 0;
         for (int j = 1; j <= maxiter; ++j) {
-            v[j + 1] = SP_MALLOC(double, n + 1);
             Mult(Matrix, v[j], w); //w[j] = Av[j]
             fastSolve(arr, w, w); //w[j] = (Prec)^{-1} w[j]
             for (int i = 1; i <= j; ++i) {
