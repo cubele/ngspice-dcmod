@@ -67,6 +67,9 @@ int
 DCtran(CKTcircuit *ckt,
        int restart)   /* forced restart flag */
 {
+    printf("DCtran\n");
+    double tmptime = SPfrontEnd->IFseconds();
+    double itertime;
     TRANan *job = (TRANan *) ckt->CKTcurJob;
     GMRESarr *arr = NULL;
     constructGMRES(&arr);
@@ -223,10 +226,14 @@ DCtran(CKTcircuit *ckt,
 /* gtri - end - wbk - Call EVTop if event-driven instances exist */
         } else
 #endif
+        printf("CKTop start\n");
+        tmptime = SPfrontEnd->IFseconds();
             converged = CKTop(ckt,
                 (ckt->CKTmode & MODEUIC) | MODETRANOP | MODEINITJCT,
                 (ckt->CKTmode & MODEUIC) | MODETRANOP | MODEINITFLOAT,
                 ckt->CKTdcMaxIter);
+        printf("time: %g\n", SPfrontEnd->IFseconds() - tmptime);
+        printf("CKTop end\n");
 
         if(converged != 0) {
             fprintf(stdout,"\nTransient solution failed -\n");
@@ -483,6 +490,7 @@ DCtran(CKTcircuit *ckt,
             ckt->CKTsenInfo->SENmode = save;
         }
 #endif
+        freeGMRES(arr);
         return(OK);
     }
     if(SPfrontEnd->IFpauseTest()) {
@@ -504,9 +512,10 @@ resume:
     }
 #endif
 #ifdef HAS_PROGREP
-    if (ckt->CKTtime == 0.)
+    if (ckt->CKTtime == 0.) {
+        itertime = SPfrontEnd->IFseconds();
         SetAnalyse( "tran init", 0);
-    else
+    } else
         SetAnalyse( "tran", (int)((ckt->CKTtime * 1000.) / ckt->CKTfinalTime + 0.5));
 #endif
     ckt->CKTdelta =
@@ -753,6 +762,7 @@ resume:
         initGMRES(arr, SMPmatSize(ckt->CKTmatrix));
         converged = NIiter_fast(ckt, arr, ckt->CKTtranMaxIter);
         printf("progress: %g\n", ckt->CKTtime / ckt->CKTfinalTime * 100);
+        printf("time: %g\n", SPfrontEnd->IFseconds() - itertime);
 
 #ifdef XSPICE
         if(ckt->evt->counts.num_insts > 0) {

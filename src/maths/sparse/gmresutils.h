@@ -14,5 +14,6 @@ void VectorConstMult(double *x, double c, double *y, int n);
 void VectorAdd(double *x, double *y, double b, int n);
 void PrintVector(double *x, int n);
 void copyMatrix(MatrixPtr Matrix, MatrixPtr dest);
+void LoadGmin(MatrixPtr Matrix, double Gmin);
 
 #endif

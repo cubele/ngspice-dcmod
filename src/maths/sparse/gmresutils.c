@@ -55,3 +55,22 @@ void copyMatrix(MatrixPtr Matrix, MatrixPtr dest) {
         }
     }
 }
+
+void LoadGmin(MatrixPtr Matrix, double Gmin)
+{
+    int I;
+    ArrayOfElementPtrs Diag;
+    ElementPtr diag;
+
+    /* Begin `LoadGmin'. */
+
+    if (Gmin != 0.0) {
+	Diag = Matrix->Diag;
+	for (I = Matrix->Size; I > 0; I--) {
+	    if ((diag = Diag[I]) != NULL)
+		diag->Real += Gmin;
+	}
+    }
+    return;
+}
+

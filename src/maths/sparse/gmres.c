@@ -85,9 +85,6 @@ void continuify(GMRESarr *arr) {
 
 void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
     int error;
-    if (!arr->hadPrec) {
-        error = SMPpreOrder(arr->Prec);
-    }
     printf("Preconditoner constructing\n");
     clock_t start = clock();
     error = SMPpreOrder(arr->Prec);
@@ -445,8 +442,9 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         //arr->ratio = 0.90;
         printf("ratio = %f\n", arr->ratio);
     } else {
-        SMPclear(arr->Prec);
-        //SMPdestroy(arr->Prec);
+        //SMPclear(arr->Prec);
+        SMPdestroy(arr->Prec);
+        arr->Prec = spCreate(n, 0, &error);
     }
 
     sparsify(arr->G, arr->ratio);
