@@ -10,7 +10,7 @@
 #include "ngspice/mif.h"
 #endif
 
-#include "graphops.hpp"
+#include "feGRASS.hpp"
 #include "gmresutils.h"
 #include <math.h>
 #include <assert.h>
@@ -35,7 +35,7 @@ struct GMRESarr{
     int origiters, totaliters, extraiters, totalrounds;
     int hadPrec, PrecNeedReset;
 
-    graph *G;
+    matGraph *G;
     double ratio;
 };
 
@@ -83,19 +83,26 @@ void continuify(GMRESarr *arr) {
     assert(arr->Prec->Elements == cnt);
 }
 
-void initPreconditoner(MatrixPtr Matrix, GMRESarr *arr) {
+void initPreconditoner(MatrixPtr Matrix, double relthres, double absthres, GMRESarr *arr) {
     int error;
     printf("Preconditoner constructing\n");
     clock_t start = clock();
     error = SMPpreOrder(arr->Prec);
     printf("preorder: %d\n", error);
-    fflush(stdout);
-    error = spOrderAndFactor(arr->Prec, NULL, Matrix->RelThreshold, Matrix->AbsThreshold, YES);
+    spSetReal(Matrix);
+    error = spOrderAndFactor(arr->Prec, NULL, relthres, absthres, YES);
+    clock_t endfactor = clock();
+    printf("factor time: %f\n", (double)(endfactor - start) / CLOCKS_PER_SEC);
+
+    if (error) {
+        printf("spOrderAndFactor: %d\n", error);
+        fflush(stdout);
+        exit(1);
+    }
     printf("factor: %d\n", error);
-    fflush(stdout);
 
     if (!arr->hadPrec) {
-        printf("New Preconditioner: %d\n", arr->Prec->Size);
+        printf("New Preconditioner: %d\n", arr->Prec->Elements);
         arr->LUsize = arr->Prec->Elements;
         arr->Precarr = SP_MALLOC(double, arr->Prec->Elements);
         arr->idx = SP_MALLOC(int, arr->Prec->Elements);
@@ -154,7 +161,6 @@ void freeGMRES(GMRESarr *arr) {
         SP_FREE(arr->v[i]);
     SP_FREE(arr->Precarr);
     SP_FREE(arr->idx);
-    deleteGraph(arr->G);
     SP_FREE(arr);
 }
 
@@ -212,7 +218,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double *RHS, do
     copyMatrix(origMatrix, arr->Orig);
     MatrixPtr Matrix = arr->Orig;
     int n = Matrix->Size, iters = 0;
-    double eps = 1e-6;
+    double eps = 1e-8;
     double *x0 = arr->x0;
     int maxiter = GMRESmaxiter;
     for (int reboot = 0; reboot < 1; reboot++) {
@@ -254,7 +260,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double *RHS, do
                 h[i][j] = c[i] * hij + s[i] * hij1;
                 h[i + 1][j] = -s[i] * hij + c[i] * hij1;
             }
-            if (ABS(h[j + 1][j]) < 1e-16) {
+            if (ABS(h[j + 1][j]) < 1e-14) {
                 m = j;
                 break;
             }
@@ -368,11 +374,8 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
-            if (Row > Col && ABS(pElement->Real) > 1e-16) {
+            if (Row > Col && ABS(pElement->Real) > 1e-10) {
                 addEdge(arr->G, Row, Col, pElement->Real);
-            }
-            if (ABS(pElement->Real) > 1e-16) {
-                addOrigEdge(arr->G, pElement->Row, I, pElement->Real);
             }
             pElement = pElement->NextInCol;
         }
@@ -438,8 +441,8 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
 
     if (!arr->hadPrec) {
         arr->Prec = spCreate(n, 0, &error);
-        arr->ratio = findBestRatio(arr->G, 50);
-        //arr->ratio = 0.90;
+        //arr->ratio = findRatio(arr->G);
+        arr->ratio = 0.11;
         printf("ratio = %f\n", arr->ratio);
     } else {
         //SMPclear(arr->Prec);
@@ -448,19 +451,18 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     }
 
     sparsify(arr->G, arr->ratio);
-    int nnz = graphToMatrix(arr->G, arr->Prec);
+    int nnz = 0, orignnz = 0;
     clock_t start = clock();
-    printf("nnz in resistors: %d\n", nnz);
-    int orignnz = 0;
     for (int I = 1; I <= n; I++) {
         ElementPtr pElement = Matrix->FirstInCol[I];
         while (pElement != NULL) {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
-            if (ABS(pElement->Real) > 1e-16) {
+            if (ABS(pElement->Real) > 1e-10 || Row == Col) {
                 orignnz++;
-                double nv = checkEdge(arr->G, pElement->Row, I, pElement->Real, &nnz);
-                if (ABS(nv) > 1e-16) {
+                double nv = checkEdge(arr->G, Row, Col, pElement->Real);
+                if (ABS(nv) > 1e-10 || Row == Col) {
+                    ++nnz;
                     SMPaddElt(arr->Prec, Row, Col, nv);
                 }
             }
@@ -472,6 +474,8 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     clearGraph(arr->G);
     clock_t end = clock();
     arr->Prectime = (double)(end - start) / CLOCKS_PER_SEC;
+    printf("preconditioner time: %f\n", arr->Prectime);
+    fflush(stdout);
 
     ckt->CKTstat->STATloadTime += SPfrontEnd->IFseconds()-startTime;
     return(OK);
@@ -518,13 +522,12 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
         if (!(ckt->CKTmode & MODEINITPRED))
 #endif
         {
-
             int firstGMRES = 0;
             if (arr->PrecNeedReset) {
                 printf("prec needed reset\n");
                 error = CKTloadPreconditioner(ckt, arr);
                 startTime = SPfrontEnd->IFseconds();
-                initPreconditoner(ckt->CKTmatrix, arr);
+                initPreconditoner(ckt->CKTmatrix, ckt->CKTpivotAbsTol, ckt->CKTpivotRelTol ,arr);
                 ckt->CKTstat->STATdecompTime += SPfrontEnd->IFseconds() - startTime;
                 arr->origiters = 0;
                 arr->totaliters = 0;

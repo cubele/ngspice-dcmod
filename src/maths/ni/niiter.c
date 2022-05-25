@@ -86,6 +86,7 @@ NIiter(CKTcircuit *ckt, int maxIter)
             /* CKTdump(ckt); */
 
             if (!(ckt->CKTniState & NIDIDPREORDER)) {
+                printf("error: no preorder\n");
                 error = SMPpreOrder(ckt->CKTmatrix);
                 if (error) {
                     ckt->CKTstat->STATnumIter += iterno;

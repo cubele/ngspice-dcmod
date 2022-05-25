@@ -10,6 +10,7 @@ Modified: 2005 Paolo Nenzi - Restructured
 #include "ngspice/devdefs.h"
 #include "ngspice/sperror.h"
 #include "ngspice/cpextern.h"
+#include "ngspice/gmres.h"
 
 #ifdef XSPICE
 #include "ngspice/enh.h"
@@ -41,7 +42,13 @@ CKTop (CKTcircuit *ckt, long int firstmode, long int continuemode,
         ckt->enh->conv_debug.last_NIiter_call =
             (ckt->CKTnumGminSteps <= 0) && (ckt->CKTnumSrcSteps <= 0);
 #endif
-        converged = NIiter (ckt, iterlim);
+        //converged = NIiter (ckt, iterlim);
+        GMRESarr *arr = NULL;
+        constructGMRES(&arr);
+        initGMRES(arr, SMPmatSize(ckt->CKTmatrix));
+        ckt->CKTdiagGmin = 1e-3;
+        converged = NIiter_fast (ckt, arr, iterlim);
+        freeGMRES(arr);
         if (converged == 0)
             return converged;   /* successfull */
     } else {

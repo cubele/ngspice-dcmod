@@ -21,7 +21,10 @@ libgmres_la_SOURCES = \
 
 libgraphops_la_SOURCES = \
 	graphops.hpp	\
-	graphops.cpp
+	graphops.cpp	\
+	feGRASS.cpp	\
+	feGRASS.hpp	\
+	graphwrapper.cpp
 
 AM_CPPFLAGS = @AM_CPPFLAGS@ -I$(top_srcdir)/src/include -O2
 AM_CXXFLAGS = -I$(top_srcdir)/src/include -std=c++11 -O2

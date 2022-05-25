@@ -7,8 +7,13 @@
 extern "C" {
 #endif
     #include "ngspice/smpdefs.h"
+    #include "ngspice/ngspice.h"
 #ifdef __cplusplus
 }
+#endif
+#define printf          win_x_printf
+
+using namespace old;
 
 void initGraph(graph **g, int n) {
     *g = new graph(n);
@@ -59,6 +64,7 @@ void graph::constructMST() {
 }
 
 int graph::sparsify(double p) {
+    printf("sparsifying graph\n");
     for (int i = 1; i <= n; ++i) {
         diag[i] = 0, maxw[i] = 0, wd[i] = 0, deg[i] = 0;
         list[i] = i;
@@ -85,7 +91,7 @@ int graph::sparsify(double p) {
         order[list[i]] = i;
     }
     for (int i = 1; i <= n; ++i) {
-        diag[i] = 0, maxw[i] = 0, deg[i] = 0, swd[i] = 0;
+        diag[i] = 0, maxw[i] = 0, deg[i] = 0, swd[i] = 0, del_diag[i] = 0;
     }
     constructMST();
     //edges not in MST
@@ -98,17 +104,27 @@ int graph::sparsify(double p) {
         }
     }
     for (int i = 1; i <= n; ++i) {
-        int u = list[i];
+        int u = list[i], cnt = 0;
         std::sort(cande[u].begin(), cande[u].end(), [](edge a, edge b) {
             return -a.w > -b.w;
         });
         for (int j = 0; j < cande[u].size(); j++) {
-            if (swd[u] < p * wd[u]) {
+            if (swd[u] < p * wd[u] && cnt < 2) {
                 insEdge(cande[u][j]);
+                ++cnt;
             } else {
                 //edges not selected may be selected in the next round
-                std::swap(cande[u][j].u, cande[u][j].v);
-                cande[cande[u][j].v].push_back(cande[u][j]);
+                if (order[cande[u][j].u] < order[cande[u][j].v]) {
+                    std::swap(cande[u][j].u, cande[u][j].v);
+                    cande[cande[u][j].u].push_back(cande[u][j]);
+                } else {
+                    del_adj[cande[u][j].u].push_back(cande[u][j].v);
+                    del_adj[cande[u][j].v].push_back(cande[u][j].u);
+                    del_w[cande[u][j].u].push_back(cande[u][j].w);
+                    del_w[cande[u][j].v].push_back(cande[u][j].w);
+                    del_diag[cande[u][j].u] += -cande[u][j].w;
+                    del_diag[cande[u][j].v] += -cande[u][j].w;
+                }
             }
         }
     }
@@ -153,15 +169,14 @@ double graph::findBestRatio(int sampleNum) {
             adj[j].clear();
             w[j].clear();
             cande[j].clear();
+            del_adj[j].clear();
+            del_w[j].clear();
             m = 0;
         }
         if (i > 1 && nnz[i] - nnz[i - 1] > maxdif) {
             ratio = minr + (maxr - minr) * (i - 2) / (sampleNum - 1);
             maxdif = nnz[i] - nnz[i - 1];
         }
-    }
-    for (int i = 1; i <= sampleNum; ++i) {
-        printf("%.3lf ", nnz[i]);
     }
     printf("\n");
     printf("%.6lf %.6lf %.6lf\n", minr, ratio, maxr);
@@ -177,6 +192,8 @@ void clearGraph(graph *g) {
         g->adj[i].clear();
         g->w[i].clear();
         g->cande[i].clear();
+        g->del_adj[i].clear();
+        g->del_w[i].clear();
     }
     g->alle.clear();
     g->orige.clear();
@@ -189,6 +206,7 @@ void setDiag(graph *g, int Row, double d) {
 }
 
 int graphToMatrix(graph *g, MatrixPtr Prec) {
+    printf("graphToMatrix\n");
     int n = g->n, nnz = 0;
     for (int i = 1; i <= n; i++) {
         g->diag[i] = 0;
@@ -205,26 +223,24 @@ int graphToMatrix(graph *g, MatrixPtr Prec) {
     for (int i = 1; i <= n; ++i) {
         if (fabs(g->diag[i]) > 1e-16) {
             SMPaddElt(Prec, i, i, -g->diag[i]);
+            printf("%d %.3lf\n", i, -g->diag[i]);
             ++nnz;
         }
     }
+    printf("nnz: %d\n", nnz);
+    fflush(stdout);
     return nnz;
 }
 
 double checkEdge(graph *g, int u, int v, double w, int *nnz) {
-    edge now = g->orige[g->nowe];
-    if (now.u == u && now.v == v) {
-        g->nowe++;
-        double diff = now.w - w;
-        diff = diff < 0 ? -diff : diff;
-        if (diff <= 1e-16) {
-            return 0;
-        } else {
-            return w;
-        }
+    if (u == v) {
+        return w - g->del_diag[u];
     } else {
-        ++*nnz;
-        return w;
+        for (int i = 0; i < g->del_adj[u].size(); i++) {
+            if (g->del_adj[u][i] == v) {
+                w -= g->del_w[u][i];
+            }
+        }
+        return fabs(w) < 1e-10 ? 0 : w;
     }
 }
-#endif

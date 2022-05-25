@@ -17,6 +17,7 @@ Modified: 2000 AlansFixes
 #include "ngspice/cktdefs.h"
 #include "ngspice/devdefs.h"
 #include "ngspice/sperror.h"
+//#include "../../maths/sparse/spdefs.h"
 
 #ifdef XSPICE
 #include "ngspice/enh.h"
@@ -51,6 +52,7 @@ CKTload(CKTcircuit *ckt)
 
     startTime = SPfrontEnd->IFseconds();
     size = SMPmatSize(ckt->CKTmatrix);
+    printf("size: %d\n", size);
     for (i = 0; i <= size; i++) {
         ckt->CKTrhs[i] = 0;
     }
