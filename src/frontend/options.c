@@ -21,8 +21,8 @@ Author: 1985 Wayne A. Christopher, U. C. Berkeley CAD Group
 #include "control.h"
 #include "spiceif.h"
 
-bool ft_acctprint = FALSE, ft_noacctprint = FALSE, ft_listprint = FALSE;
-bool ft_nodesprint = FALSE, ft_optsprint = FALSE, ft_noinitprint = FALSE;
+bool ft_acctprint = FALSE, ft_noacctprint = TRUE, ft_listprint = FALSE;
+bool ft_nodesprint = FALSE, ft_optsprint = FALSE, ft_noinitprint = TRUE;
 bool ft_norefprint = FALSE;
 bool ft_ngdebug = FALSE, ft_stricterror = FALSE;
 
