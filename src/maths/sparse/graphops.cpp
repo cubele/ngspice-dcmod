@@ -11,7 +11,6 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-#define printf          win_x_printf
 
 using namespace old;
 

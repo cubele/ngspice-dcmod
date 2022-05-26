@@ -23,7 +23,6 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-#define printf          win_x_printf
 
 void feGRASS(int* ai_in,int* aj_in,double* av_in,int M_in,int N_in,int* insparsifier_in,double alpha_in);
 
