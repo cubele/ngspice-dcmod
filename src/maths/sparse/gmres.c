@@ -85,40 +85,35 @@ void continuify(GMRESarr *arr) {
 
 void initPreconditoner(MatrixPtr Matrix, double relthres, double absthres, GMRESarr *arr) {
     int error;
-    printf("Preconditoner constructing\n");
     clock_t start = clock();
     error = SMPpreOrder(arr->Prec);
-    printf("preorder: %d\n", error);
     spSetReal(Matrix);
     error = spOrderAndFactor(arr->Prec, NULL, relthres, absthres, YES);
     clock_t endfactor = clock();
-    printf("factor time: %f\n", (double)(endfactor - start) / CLOCKS_PER_SEC);
-
+    printf("preconditioner LU factor time: %f\n", (double)(endfactor - start) / CLOCKS_PER_SEC);
     if (error) {
         printf("spOrderAndFactor: %d\n", error);
         fflush(stdout);
         exit(1);
     }
-    printf("factor: %d\n", error);
 
     if (!arr->hadPrec) {
-        printf("New Preconditioner: %d\n", arr->Prec->Elements);
+        printf("New Preconditioner elements: %d\n", arr->Prec->Elements);
         arr->LUsize = arr->Prec->Elements;
         arr->Precarr = SP_MALLOC(double, arr->Prec->Elements);
         arr->idx = SP_MALLOC(int, arr->Prec->Elements);
     } else if (arr->Prec->Elements > arr->LUsize) {
-        printf("Warning: GMRES preconditioner size increased from %d to %d\n", arr->LUsize, arr->Prec->Elements);
+        printf("Preconditioner elements increased from %d to %d\n", arr->LUsize, arr->Prec->Elements);
         arr->LUsize = arr->Prec->Elements;
         arr->Precarr = SP_REALLOC(arr->Precarr, double, arr->Prec->Elements);
         arr->idx = SP_REALLOC(arr->idx, int, arr->Prec->Elements);
     }
-    printf("GMRES preconditioner size: %d %d\n", arr->LUsize, arr->Prec->Elements);
     continuify(arr);
     clock_t end = clock();
     arr->Prectime += (double) (end - start) / CLOCKS_PER_SEC;
     arr->hadPrec = 1;
     arr->PrecNeedReset = 0;
-    printf("Preconditioner time: %f\n", arr->Prectime);
+    printf("Total Preconditioner construction time: %f\n", arr->Prectime);
 }
 
 void initGMRES(GMRESarr *arr, int n) {
@@ -211,11 +206,12 @@ void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
     return;
 }
 
-int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double *RHS, double *Solution)
+int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, double *RHS, double *Solution)
 {
     clock_t start = clock();
     //original matrix may contain spaces reserved for LUfac
     copyMatrix(origMatrix, arr->Orig);
+    LoadGmin(arr->Orig, Gmin);
     MatrixPtr Matrix = arr->Orig;
     int n = Matrix->Size, iters = 0;
     double eps = 1e-8;
@@ -308,7 +304,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double *RHS, do
     SMPclear(arr->Orig);
     clock_t end = clock();
     arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
-    printf("iters: %d\n", iters);
+    printf("GMRES time: %g iters: %d\n", (double)(end - start) / CLOCKS_PER_SEC, iters);
     return iters;
 }
 
@@ -450,9 +446,9 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         arr->Prec = spCreate(n, 0, &error);
     }
 
+    clock_t start = clock();
     sparsify(arr->G, arr->ratio);
     int nnz = 0, orignnz = 0;
-    clock_t start = clock();
     for (int I = 1; I <= n; I++) {
         ElementPtr pElement = Matrix->FirstInCol[I];
         while (pElement != NULL) {
@@ -463,6 +459,9 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
                 double nv = checkEdge(arr->G, Row, Col, pElement->Real);
                 if (ABS(nv) > 1e-10 || Row == Col) {
                     ++nnz;
+                    if(Row == Col) {
+                        nv += ckt->CKTdiagGmin;
+                    }
                     SMPaddElt(arr->Prec, Row, Col, nv);
                 }
             }
@@ -474,7 +473,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     clearGraph(arr->G);
     clock_t end = clock();
     arr->Prectime = (double)(end - start) / CLOCKS_PER_SEC;
-    printf("preconditioner time: %f\n", arr->Prectime);
+    printf("preconditioner creation time: %f\n", arr->Prectime);
     fflush(stdout);
 
     ckt->CKTstat->STATloadTime += SPfrontEnd->IFseconds()-startTime;
@@ -561,27 +560,26 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                 SPfrontEnd->IFseconds() - startTime;
 #endif
 #ifndef orig
-            printf("iterno = %d\n", iterno);
+            printf("NI iterno = %d\n", iterno);
             startTime = SPfrontEnd->IFseconds();
-            int iters = gmresSolvePreconditoned(arr, ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhs);
-            printf("GMRES time = %g\n", SPfrontEnd->IFseconds() - startTime);
+            int iters = gmresSolvePreconditoned(arr, ckt->CKTmatrix, ckt->CKTdiagGmin, ckt->CKTrhs, ckt->CKTrhs);
             arr->totaliters += iters;
             if (firstGMRES) {
                 arr->origiters = iters;
                 arr->extraiters = 0;
                 arr->totalrounds = 1;
             } else {
-                int idif = iters - arr->origiters;
-                if (idif > 0) {
-                    arr->extraiters += idif;
-                }
                 ++arr->totalrounds;
-                int reducediters = idif * arr->totalrounds - arr->extraiters;
-                double itertime = arr->GMREStime / (double)arr->totaliters;
-                if (iters > 0.8 * GMRESmaxiter || itertime * idif > arr->Prectime || itertime * reducediters > arr->Prectime) {
-                    printf("preconditioner reset after %d iters\n", arr->totaliters);
-                    printf("idif = %d, GMREStime = %g, Prectime = %g\n", idif, arr->GMREStime, arr->Prectime);
-                    printf("itertime = %g, reducediters = %d\n", itertime, reducediters);
+                int estiters = iters * arr->totalrounds;
+                int reducediters = estiters - arr->totaliters;
+                double avgitertime = arr->GMREStime / (double)arr->totaliters;
+                if (iters > 0.9 * GMRESmaxiter || 
+                    arr->Prectime < reducediters * avgitertime) {
+                    printf("preconditioner reset after %d iters and %d rounds\n", arr->totaliters, arr->totalrounds);
+                    printf("total GMREStime = %g, Prectime = %g\n", arr->GMREStime, arr->Prectime);
+                    printf("avgitertime = %g\n", avgitertime);
+                    printf("reducediters = %d\n", reducediters);
+                    printf("estiters = %d\n", estiters);
                     arr->PrecNeedReset = 1;
                 }
             }

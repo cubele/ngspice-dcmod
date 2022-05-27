@@ -7,7 +7,7 @@
 #define GMRESmaxiter (300)
 typedef struct GMRESarr GMRESarr;
 
-int gmresSolvePreconditoned(GMRESarr *, MatrixPtr, double *, double *);
+int gmresSolvePreconditoned(GMRESarr *, MatrixPtr, double, double *, double *);
 void initPreconditoner(MatrixPtr, double, double, GMRESarr *);
 void constructGMRES(GMRESarr **);
 void initGMRES(GMRESarr *, int);

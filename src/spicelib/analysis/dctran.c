@@ -72,7 +72,6 @@ DCtran(CKTcircuit *ckt,
     double itertime;
     TRANan *job = (TRANan *) ckt->CKTcurJob;
     GMRESarr *arr = NULL;
-    constructGMRES(&arr);
 
     int i;
     double olddelta;
@@ -228,7 +227,9 @@ DCtran(CKTcircuit *ckt,
 #endif
         printf("CKTop start\n");
         tmptime = SPfrontEnd->IFseconds();
-            converged = CKTop(ckt,
+        constructGMRES(&arr);
+        initGMRES(arr, SMPmatSize(ckt->CKTmatrix));
+            converged = CKTop_fast(ckt, arr,
                 (ckt->CKTmode & MODEUIC) | MODETRANOP | MODEINITJCT,
                 (ckt->CKTmode & MODEUIC) | MODETRANOP | MODEINITFLOAT,
                 ckt->CKTdcMaxIter);
@@ -759,10 +760,8 @@ resume:
 /* gtri - end - wbk - Set evt_step */
 #endif
 
-        initGMRES(arr, SMPmatSize(ckt->CKTmatrix));
         converged = NIiter_fast(ckt, arr, ckt->CKTtranMaxIter);
         printf("progress: %g\n", ckt->CKTtime / ckt->CKTfinalTime * 100);
-        printf("time: %g\n", SPfrontEnd->IFseconds() - itertime);
 
 #ifdef XSPICE
         if(ckt->evt->counts.num_insts > 0) {

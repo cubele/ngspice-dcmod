@@ -32,6 +32,7 @@
 #include "ngspice/spmatrix.h"
 #include "ngspice/noisedef.h"
 #include "ngspice/hash.h"
+#include "ngspice/gmres.h"
 
 struct CKTnode {
     IFuid name;
@@ -365,6 +366,7 @@ extern IFuid CKTnodName(CKTcircuit *, int);
 extern void CKTnodOut(CKTcircuit *);
 extern CKTnode * CKTnum2nod(CKTcircuit *, int);
 extern int CKTop(CKTcircuit *, long, long, int);
+extern int CKTop_fast(CKTcircuit *, GMRESarr *, long, long, int);
 extern int CKTpModName(char *, IFvalue *, CKTcircuit *, int , IFuid , GENmodel **);
 extern int CKTpName(char *, IFvalue *, CKTcircuit *, int , char *, GENinstance **);
 extern int CKTparam(CKTcircuit *, GENinstance *, int , IFvalue *, IFvalue *);
