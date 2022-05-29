@@ -16,7 +16,7 @@ Author: 1985 Thomas L. Quarles
 
 extern bool ft_ngdebug;
 
-
+#define STEPDEBUG
 int
 NIconvTest(CKTcircuit *ckt)
 {
@@ -33,7 +33,7 @@ NIconvTest(CKTcircuit *ckt)
     for (i=1;i<=size;i++) {
         new =  ckt->CKTrhs [i] ;
         old =  ckt->CKTrhsOld [i] ;
-        printf("chk for convergence:   %s    new: %g    old: %g\n",CKTnodName(ckt,i),new,old);
+        //printf("chk for convergence:   %s    new: %g    old: %g\n",CKTnodName(ckt,i),new,old);
     }
 #endif /* STEPDEBUG */
     for (i=1;i<=size;i++) {
@@ -43,6 +43,7 @@ NIconvTest(CKTcircuit *ckt)
         if (isnan(new)) {
             if (ft_ngdebug)
                 fprintf(stderr, "Warning: non-convergence, node %s is nan\n", CKTnodName(ckt, i));
+            fprintf(stderr, "Warning: non-convergence, node %s is nan\n", CKTnodName(ckt, i));
             return 1;
         }
         if(node->type == SP_VOLTAGE) {

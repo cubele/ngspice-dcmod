@@ -39,6 +39,7 @@ CKTop_fast (CKTcircuit *ckt, GMRESarr *arr, long int firstmode, long int continu
 #endif
 
     ckt->CKTmode = firstmode;
+    printf("diagmin: %f\n", ckt->CKTdiagGmin);
 
     if (!ckt->CKTnoOpIter) {
 #ifdef XSPICE

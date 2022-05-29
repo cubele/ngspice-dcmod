@@ -210,11 +210,11 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
 {
     clock_t start = clock();
     //original matrix may contain spaces reserved for LUfac
-    copyMatrix(origMatrix, arr->Orig);
-    LoadGmin(arr->Orig, Gmin);
-    MatrixPtr Matrix = arr->Orig;
+    //copyMatrix(origMatrix, arr->Orig);
+    LoadGmin(origMatrix, Gmin);
+    MatrixPtr Matrix = origMatrix;
     int n = Matrix->Size, iters = 0;
-    double eps = 1e-8;
+    double eps = 1e-12;
     double *x0 = arr->x0;
     int maxiter = GMRESmaxiter;
     for (int reboot = 0; reboot < 1; reboot++) {
@@ -256,7 +256,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
                 h[i][j] = c[i] * hij + s[i] * hij1;
                 h[i + 1][j] = -s[i] * hij + c[i] * hij1;
             }
-            if (ABS(h[j + 1][j]) < 1e-14) {
+            if (ABS(h[j + 1][j]) < 1e-16) {
                 m = j;
                 break;
             }
@@ -301,7 +301,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
     }
     for (int I = n; I > 0; I--)
         Solution[I] = x0[I];
-    SMPclear(arr->Orig);
+    //SMPclear(arr->Orig);
     clock_t end = clock();
     arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
     printf("GMRES time: %g iters: %d\n", (double)(end - start) / CLOCKS_PER_SEC, iters);
@@ -370,7 +370,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
-            if (Row > Col && ABS(pElement->Real) > 1e-10) {
+            if (Row > Col && ABS(pElement->Real) > 1e-16) {
                 addEdge(arr->G, Row, Col, pElement->Real);
             }
             pElement = pElement->NextInCol;
@@ -438,7 +438,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     if (!arr->hadPrec) {
         arr->Prec = spCreate(n, 0, &error);
         //arr->ratio = findRatio(arr->G);
-        arr->ratio = 0.11;
+        arr->ratio = 0.18;
         printf("ratio = %f\n", arr->ratio);
     } else {
         //SMPclear(arr->Prec);
@@ -454,10 +454,10 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         while (pElement != NULL) {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
-            if (ABS(pElement->Real) > 1e-10 || Row == Col) {
+            if (ABS(pElement->Real) > 1e-16 || Row == Col) {
                 orignnz++;
                 double nv = checkEdge(arr->G, Row, Col, pElement->Real);
-                if (ABS(nv) > 1e-10 || Row == Col) {
+                if (ABS(nv) > 1e-16 || Row == Col) {
                     ++nnz;
                     if(Row == Col) {
                         nv += ckt->CKTdiagGmin;
