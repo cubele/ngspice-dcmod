@@ -214,7 +214,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
     LoadGmin(origMatrix, Gmin);
     MatrixPtr Matrix = origMatrix;
     int n = Matrix->Size, iters = 0;
-    double eps = 1e-12;
+    double eps = 1e-14;
     double *x0 = arr->x0;
     int maxiter = GMRESmaxiter;
     for (int reboot = 0; reboot < 1; reboot++) {
@@ -283,6 +283,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
             }
             m = j;
         }
+        printf("relres: %e\n", relres);
         iters += m;
         double *y = arr->y;
 
@@ -370,7 +371,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
-            if (Row > Col && ABS(pElement->Real) > 1e-16) {
+            if (pElement->Real != 0 && Row > Col) {
                 addEdge(arr->G, Row, Col, pElement->Real);
             }
             pElement = pElement->NextInCol;
@@ -438,7 +439,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     if (!arr->hadPrec) {
         arr->Prec = spCreate(n, 0, &error);
         //arr->ratio = findRatio(arr->G);
-        arr->ratio = 0.18;
+        arr->ratio = 0.15;
         printf("ratio = %f\n", arr->ratio);
     } else {
         //SMPclear(arr->Prec);
@@ -454,16 +455,14 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
         while (pElement != NULL) {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
-            if (ABS(pElement->Real) > 1e-16 || Row == Col) {
-                orignnz++;
-                double nv = checkEdge(arr->G, Row, Col, pElement->Real);
-                if (ABS(nv) > 1e-16 || Row == Col) {
-                    ++nnz;
-                    if(Row == Col) {
-                        nv += ckt->CKTdiagGmin;
-                    }
-                    SMPaddElt(arr->Prec, Row, Col, nv);
+            orignnz++;
+            double nv = checkEdge(arr->G, Row, Col, pElement->Real);
+            if (nv != 0 || Row == Col) {
+                ++nnz;
+                if(Row == Col) {
+                    nv += ckt->CKTdiagGmin;
                 }
+                SMPaddElt(arr->Prec, Row, Col, nv);
             }
             pElement = pElement->NextInCol;
         }
