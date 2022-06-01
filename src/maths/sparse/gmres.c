@@ -17,7 +17,7 @@
 #include <time.h>
 #define GMRESmaxiter (1000)
 #define ratiodiff (0.03)
-#define initratio (0.10)
+#define initratio (0.15)
 
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
@@ -222,8 +222,9 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
     LoadGmin(origMatrix, Gmin);
     MatrixPtr Matrix = origMatrix;
     int n = Matrix->Size, iters = 0;
-    double eps = 1e-12;
+    double eps = 1e-10;
     double *x0 = arr->x0;
+    double *tmp = SP_MALLOC(double, n + 1);
     int maxiter = GMRESmaxiter;
     for (int reboot = 0; reboot < 1; reboot++) {
         double **v = arr->v;
@@ -236,14 +237,14 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
         double *q = arr->q;
         
         for (int i = 0; i <= n; i++)
-            r0[i] = 0.0, w[i] = 0.0, q[i] = 0.0;
+            r0[i] = 1.0, w[i] = 0.0, q[i] = 0.0;
         for (int i = 1; i <= n; i++)
             v[1][i] = r0[i];
         
         Mult(Matrix, x0, r0); //r0 = Ax0
         for (int i = 1; i <= n; i++)
             r0[i] = RHS[i] - r0[i]; //r0 = b - Ax0
-        fastSolve(arr, r0, r0); //r0 = (Prec)^{-1} r0
+        //fastSolve(arr, r0, r0); //r0 = (Prec)^{-1} r0
         double beta = Norm(r0, n);
 
         VectorConstMult(r0, 1.0 / beta, v[1], n); //v[1] = r0/beta
@@ -252,8 +253,10 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
         double relres = 0;
         int m = 0;
         for (int j = 1; j <= maxiter; ++j) {
-            Mult(Matrix, v[j], w); //w[j] = Av[j]
-            fastSolve(arr, w, w); //w[j] = (Prec)^{-1} w[j]
+            //Mult(Matrix, v[j], w); //w[j] = Av[j]
+            //fastSolve(arr, w, w); //w[j] = (Prec)^{-1} w[j]
+            fastSolve(arr, v[j], w); //w[j] = (Prec)^{-1} v[j]
+            Mult(Matrix, w, w); //w[j] = A(Prec)^{-1}v[j]
             for (int i = 1; i <= j; ++i) {
                 h[i][j] = Dot(v[i], w, n);
                 VectorAdd(w, v[i], -h[i][j], n);//w[j] = w[j] - h[i][j]v[i]
@@ -306,17 +309,39 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
             y[i] /= h[i][i];
         }
 
-        for (int i = 1; i <= m; i++)
-            VectorAdd(x0, v[i], y[i], n);
+        //x_m = x_0 + Prec^{-1}V_my_m
+        for (int i = 1; i <= m; i++) {
+            VectorConstMult(v[i], y[i], tmp, n);
+            fastSolve(arr, tmp, tmp);
+            VectorAdd(x0, tmp, 1, n);
+            //VectorAdd(x0, v[i], y[i], n);
+        }
         if (relres < eps)
             break;
     }
     for (int I = n; I > 0; I--)
         Solution[I] = x0[I];
+    Mult(Matrix, Solution, tmp);
+
+    double diff = 0;
+    for (int i = 1; i <= n; i++)
+        diff += (RHS[i] - tmp[i]) * (RHS[i] - tmp[i]);
+    diff = sqrt(diff);
+    printf("GMRES end: %e residual\n", diff);
+
+    double absdiff = 0, reldiff = 0;
+    for (int i = 1; i <= n; i++) {
+        absdiff = MAX(absdiff, ABS(RHS[i] - tmp[i]));
+        double rdiff = ABS(RHS[i] - tmp[i]) / MAX(ABS(RHS[i]), ABS(tmp[i]));
+        reldiff = MAX(reldiff, rdiff);
+    }
+    printf("max absdiff: %e max reldiff: %e\n", absdiff, reldiff);
+
     //SMPclear(arr->Orig);
     clock_t end = clock();
     arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
     printf("GMRES time: %g iters: %d\n", (double)(end - start) / CLOCKS_PER_SEC, iters);
+    SP_FREE(tmp);
     return iters;
 }
 

@@ -207,6 +207,10 @@ void addedges(double fac,int sigma){
 		if(count>=num) break;
 		if(ptr>=bdry){
 			ptr=0;uplink++;
+            if (uplink > SIZE) {
+                cout << "uplink > SIZE" << endl;
+                break;
+            }
 			cout<<count<<" edges recovered"<<endl;continue;
 		}
 		ind=edgeperm[ptr];
