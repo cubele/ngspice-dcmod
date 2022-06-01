@@ -19,7 +19,7 @@
 #define ratiodiff (0.03)
 #define initratio (0.15)
 #define GMRESeps (1e-12)
-
+#define REALeps (1e-6)
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
     double c[GMRESmaxiter + 3], s[GMRESmaxiter + 3], y[GMRESmaxiter + 3];
@@ -230,7 +230,10 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
     double *x0 = arr->x0;
     double *tmp = SP_MALLOC(double, n + 1);
     int maxiter = GMRESmaxiter;
-    for (int reboot = 0; reboot < 1000; reboot++) {
+    for (int i = 0; i <= n; i++) {
+        x0[i] = 0.0;
+    }
+    for (int reboot = 0; reboot < 1; reboot++) {
         double **v = arr->v;
         double *h[GMRESmaxiter + 3];
         for (int i = 0; i < GMRESmaxiter + 3; i++)
@@ -297,14 +300,46 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
             q[j + 1] = -s[j] * q[j];
             q[j] = c[j] * q[j];
             relres = ABS(q[j + 1]) / beta;
+            m = j;
             if (relres < eps) {
-                m = j;
-                break;
+                double *y = arr->y;
+                //solve h*y = q
+                for (int i = m; i >= 1; --i) {
+                    y[i] = q[i];
+                    for (int j = i + 1; j <= m; ++j) {
+                        y[i] -= h[i][j] * y[j];
+                    }
+                    y[i] /= h[i][i];
+                }
+
+                //x_m = x_0 + Prec^{-1}V_my_m
+                for (int i = 1; i <= m; i++) {
+                    VectorConstMult(v[i], y[i], tmp, n);
+                    fastSolve(arr, tmp, tmp);
+                    VectorAdd(x0, tmp, 1, n);
+                    //VectorAdd(x0, v[i], y[i], n);
+                }
+                
+                double diff = 0;
+                Mult(Matrix, x0, tmp);
+                for (int i = 1; i <= n; i++)
+                    diff += (RHS[i] - tmp[i]) * (RHS[i] - tmp[i]);
+                diff = sqrt(diff);
+                for (int i = 0; i <= n; i++) {
+                    x0[i] = 0.0;
+                }
+
+                if (diff < REALeps) {
+                    m = j;
+                    break;
+                } else {
+                    eps = relres * 0.8;
+                    printf("eps changed to %e, real relres = %e\n", eps, diff);
+                }
             }
             if (j % 100 == 0) {
                 printf("relres: %e iter: %d\n", relres, j);
             }
-            m = j;
         }
         printf("final relres: %e\n", relres);
         iters += m;
@@ -332,9 +367,9 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
         for (int i = 1; i <= n; i++)
             diff += (RHS[i] - tmp[i]) * (RHS[i] - tmp[i]);
         diff = sqrt(diff);
-        printf("GMRES end, residual: %e ", diff);
+        printf("GMRES end, real residual: %e\n", diff);
         diff = diff / Norm(RHS, n);
-        printf("relative residual: %e\n", diff);
+        printf("real relative residual: %e\n", diff);
 
         double absdiff = 0, reldiff = 0;
         double totabsdiff = 0, totreldiff = 0;
@@ -349,10 +384,6 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
         }
         printf("max absdiff: %e max reldiff: %e\n", absdiff, reldiff);
         printf("avg absdiff: %e avg reldiff: %e\n", totabsdiff / n, totreldiff / n);
-
-        if (diff < GMRESeps) {
-            break;
-        }
     }
     for (int I = n; I > 0; I--)
         Solution[I] = x0[I];
@@ -637,6 +668,10 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                     printf("reducediters = %d\n", reducediters);
                     printf("estiters = %d\n", estiters);
                     arr->PrecNeedReset = 1;
+                    if (iters > 0.9 * GMRESmaxiter) {
+                        arr->ratio += ratiodiff;
+                        printf("ratio increased to %g due to non convergence\n", arr->ratio);
+                    }
                 }
             }
             ckt->CKTstat->STATsolveTime +=
@@ -646,11 +681,6 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             ckt->CKTrhs[0] = 0;
             ckt->CKTrhsSpare[0] = 0;
             ckt->CKTrhsOld[0] = 0;
-
-            if (iterno % 5 == 0 && iterno > 4) {
-                arr->ratio += ratiodiff;
-                arr->PrecNeedReset = 1;
-            }
 
             if (iterno > maxIter) {
                 ckt->CKTstat->STATnumIter += iterno;
