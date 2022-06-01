@@ -16,8 +16,8 @@
 #include <assert.h>
 #include <time.h>
 #define GMRESmaxiter (1000)
-#define ratiodiff (0.03)
-#define initratio (0.15)
+#define ratiodiff (0.01)
+#define initratio (0.4)
 
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
@@ -237,14 +237,12 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
         double *q = arr->q;
         
         for (int i = 0; i <= n; i++)
-            r0[i] = 1.0, w[i] = 0.0, q[i] = 0.0;
-        for (int i = 1; i <= n; i++)
-            v[1][i] = r0[i];
+            r0[i] = 0.0, w[i] = 0.0, q[i] = 0.0;
         
         Mult(Matrix, x0, r0); //r0 = Ax0
         for (int i = 1; i <= n; i++)
             r0[i] = RHS[i] - r0[i]; //r0 = b - Ax0
-        //fastSolve(arr, r0, r0); //r0 = (Prec)^{-1} r0
+        fastSolve(arr, r0, r0); //r0 = (Prec)^{-1} r0
         double beta = Norm(r0, n);
 
         VectorConstMult(r0, 1.0 / beta, v[1], n); //v[1] = r0/beta
@@ -253,10 +251,10 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
         double relres = 0;
         int m = 0;
         for (int j = 1; j <= maxiter; ++j) {
-            //Mult(Matrix, v[j], w); //w[j] = Av[j]
-            //fastSolve(arr, w, w); //w[j] = (Prec)^{-1} w[j]
-            fastSolve(arr, v[j], w); //w[j] = (Prec)^{-1} v[j]
-            Mult(Matrix, w, w); //w[j] = A(Prec)^{-1}v[j]
+            Mult(Matrix, v[j], w); //w[j] = Av[j]
+            fastSolve(arr, w, w); //w[j] = (Prec)^{-1} w[j]
+            //fastSolve(arr, v[j], w); //w[j] = (Prec)^{-1} v[j]
+            //Mult(Matrix, w, w); //w[j] = A(Prec)^{-1}v[j]
             for (int i = 1; i <= j; ++i) {
                 h[i][j] = Dot(v[i], w, n);
                 VectorAdd(w, v[i], -h[i][j], n);//w[j] = w[j] - h[i][j]v[i]
@@ -311,10 +309,10 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
 
         //x_m = x_0 + Prec^{-1}V_my_m
         for (int i = 1; i <= m; i++) {
-            VectorConstMult(v[i], y[i], tmp, n);
-            fastSolve(arr, tmp, tmp);
-            VectorAdd(x0, tmp, 1, n);
-            //VectorAdd(x0, v[i], y[i], n);
+            //VectorConstMult(v[i], y[i], tmp, n);
+            //fastSolve(arr, tmp, tmp);
+            //VectorAdd(x0, tmp, 1, n);
+            VectorAdd(x0, v[i], y[i], n);
         }
         if (relres < eps)
             break;
@@ -327,15 +325,23 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
     for (int i = 1; i <= n; i++)
         diff += (RHS[i] - tmp[i]) * (RHS[i] - tmp[i]);
     diff = sqrt(diff);
-    printf("GMRES end: %e residual\n", diff);
+    printf("GMRES end, residual: %e ", diff);
+    diff = diff / Norm(RHS, n);
+    printf("relative residual: %e\n", diff);
 
     double absdiff = 0, reldiff = 0;
+    double totabsdiff = 0, totreldiff = 0;
     for (int i = 1; i <= n; i++) {
         absdiff = MAX(absdiff, ABS(RHS[i] - tmp[i]));
-        double rdiff = ABS(RHS[i] - tmp[i]) / MAX(ABS(RHS[i]), ABS(tmp[i]));
-        reldiff = MAX(reldiff, rdiff);
+        totabsdiff += ABS(RHS[i] - tmp[i]);
+        if (MAX(ABS(RHS[i]), ABS(tmp[i]) > 1e-16)) {
+            double rdiff = ABS(RHS[i] - tmp[i]) / MAX(ABS(RHS[i]), ABS(tmp[i]));
+            totreldiff += rdiff;
+            reldiff = MAX(reldiff, rdiff);
+        }
     }
     printf("max absdiff: %e max reldiff: %e\n", absdiff, reldiff);
+    printf("avg absdiff: %e avg reldiff: %e\n", totabsdiff / n, totreldiff / n);
 
     //SMPclear(arr->Orig);
     clock_t end = clock();
