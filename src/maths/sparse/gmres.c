@@ -16,8 +16,9 @@
 #include <assert.h>
 #include <time.h>
 #define GMRESmaxiter (1000)
-#define ratiodiff (0.01)
-#define initratio (0.4)
+#define ratiodiff (0.03)
+#define initratio (0.15)
+#define GMRESeps (1e-12)
 
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
@@ -225,7 +226,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
     LoadGmin(origMatrix, Gmin);
     MatrixPtr Matrix = origMatrix;
     int n = Matrix->Size, iters = 0;
-    double eps = 1e-10;
+    double eps = GMRESeps;
     double *x0 = arr->x0;
     double *tmp = SP_MALLOC(double, n + 1);
     int maxiter = GMRESmaxiter;
@@ -349,7 +350,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
         printf("max absdiff: %e max reldiff: %e\n", absdiff, reldiff);
         printf("avg absdiff: %e avg reldiff: %e\n", totabsdiff / n, totreldiff / n);
 
-        if (diff < 1e-6) {
+        if (diff < GMRESeps) {
             break;
         }
     }
