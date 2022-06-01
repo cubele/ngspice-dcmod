@@ -15,6 +15,9 @@
 #include <math.h>
 #include <assert.h>
 #include <time.h>
+#define GMRESmaxiter (1000)
+#define ratiodiff (0.03)
+#define initratio (0.10)
 
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
@@ -38,6 +41,10 @@ struct GMRESarr{
     matGraph *G;
     double ratio;
 };
+
+void resetPrec(GMRESarr *arr) {
+    arr->PrecNeedReset = 1;
+}
 
 void constructGMRES(GMRESarr **arr) {
     *arr = SP_MALLOC(GMRESarr, 1);
@@ -140,6 +147,7 @@ void initGMRES(GMRESarr *arr, int n) {
 
     int error;
     arr->Orig = spCreate(n, 0, &error);
+    arr->ratio = initratio;
     initGraph(&arr->G, n);
 }
 
@@ -214,7 +222,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
     LoadGmin(origMatrix, Gmin);
     MatrixPtr Matrix = origMatrix;
     int n = Matrix->Size, iters = 0;
-    double eps = 1e-14;
+    double eps = 1e-12;
     double *x0 = arr->x0;
     int maxiter = GMRESmaxiter;
     for (int reboot = 0; reboot < 1; reboot++) {
@@ -281,9 +289,12 @@ int gmresSolvePreconditoned(GMRESarr *arr, MatrixPtr origMatrix, double Gmin, do
                 m = j;
                 break;
             }
+            if (j % 100 == 0) {
+                printf("relres: %e iter: %d\n", relres, j);
+            }
             m = j;
         }
-        printf("relres: %e\n", relres);
+        printf("final relres: %e\n", relres);
         iters += m;
         double *y = arr->y;
 
@@ -438,16 +449,13 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
 
     if (!arr->hadPrec) {
         arr->Prec = spCreate(n, 0, &error);
-        //arr->ratio = findRatio(arr->G);
-        arr->ratio = 0.15;
-        printf("ratio = %f\n", arr->ratio);
     } else {
-        //SMPclear(arr->Prec);
         SMPdestroy(arr->Prec);
         arr->Prec = spCreate(n, 0, &error);
     }
 
     clock_t start = clock();
+    printf("ratio = %f\n", arr->ratio);
     sparsify(arr->G, arr->ratio);
     int nnz = 0, orignnz = 0;
     for (int I = 1; I <= n; I++) {
@@ -567,6 +575,10 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                 arr->origiters = iters;
                 arr->extraiters = 0;
                 arr->totalrounds = 1;
+                if (iters > 0.9 * GMRESmaxiter) {
+                    arr->ratio += ratiodiff;
+                    arr->PrecNeedReset = 1;
+                }
             } else {
                 ++arr->totalrounds;
                 int estiters = iters * arr->totalrounds;
@@ -589,6 +601,11 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             ckt->CKTrhs[0] = 0;
             ckt->CKTrhsSpare[0] = 0;
             ckt->CKTrhsOld[0] = 0;
+
+            if (iterno % 5 == 0 && iterno > 4) {
+                arr->ratio += ratiodiff;
+                arr->PrecNeedReset = 1;
+            }
 
             if (iterno > maxIter) {
                 ckt->CKTstat->STATnumIter += iterno;
