@@ -235,7 +235,7 @@ DCtran(CKTcircuit *ckt,
                 ckt->CKTdcMaxIter);
         printf("time: %g\n", SPfrontEnd->IFseconds() - tmptime);
         printf("CKTop end\n");
-        resetPrec(arr);
+        //resetPrec(arr);
 
         if(converged != 0) {
             fprintf(stdout,"\nTransient solution failed -\n");

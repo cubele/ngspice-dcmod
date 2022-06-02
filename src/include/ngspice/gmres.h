@@ -6,7 +6,7 @@
 
 typedef struct GMRESarr GMRESarr;
 
-int gmresSolvePreconditoned(GMRESarr *, MatrixPtr, double, double *, double *);
+int gmresSolvePreconditoned(GMRESarr *, CKTcircuit *, MatrixPtr, double, double *, double *);
 void initPreconditoner(MatrixPtr, double, double, GMRESarr *);
 void constructGMRES(GMRESarr **);
 void initGMRES(GMRESarr *, int);
