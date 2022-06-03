@@ -73,4 +73,3 @@ void LoadGmin(MatrixPtr Matrix, double Gmin)
     }
     return;
 }
-

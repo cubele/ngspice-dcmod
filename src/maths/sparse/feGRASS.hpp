@@ -100,7 +100,7 @@ struct matGraph {
                     w -= del_w[u][i];
                 }
             }
-            return fabs(w) < 1e-16 ? 0.0 : w;
+            return fabs(w) < 1e-20 ? 0.0 : w;
         }
     }
 };

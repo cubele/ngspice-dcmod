@@ -15,34 +15,6 @@
 #include <math.h>
 #include <assert.h>
 #include <time.h>
-#define GMRESmaxiter (300)
-#define ratiodiff (0.02)
-#define initratio (0.20)
-#define GMRESeps (1e-12)
-#define REALeps (1e-6)
-#define GMRESreboots (6)
-struct GMRESarr{
-    double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
-    double c[GMRESmaxiter + 3], s[GMRESmaxiter + 3], y[GMRESmaxiter + 3];
-    double *x0;
-    double *v[GMRESmaxiter + 3];
-    double *r0, *w, *q;
-    double *sol;
-    int n;
-
-    MatrixPtr Prec, Orig;
-    double *Precarr; //contiguous array for preconditioner to acclerate solving
-    int *idx;
-    int LUsize;
-    int *rowind, *colind; //next row/col starts at colind[n]
-    int Lsize, Usize;
-    double GMREStime, Prectime;
-    int origiters, totaliters, extraiters, totalrounds;
-    int hadPrec, PrecNeedReset, iterno;
-
-    matGraph *G;
-    double ratio;
-};
 
 void resetPrec(GMRESarr *arr) {
     arr->PrecNeedReset = 1;
@@ -71,8 +43,10 @@ void continuify(GMRESarr *arr) {
         arr->Precarr[cnt++] = pPivot->Real;
         pElement = pPivot->NextInCol;
         while (pElement != NULL) {
-            arr->idx[cnt] = pElement->Row;
-            arr->Precarr[cnt++] = pElement->Real;
+            if (ABS(pElement->Real) > 1e-20) {
+                arr->idx[cnt] = pElement->Row;
+                arr->Precarr[cnt++] = pElement->Real;
+            }
             pElement = pElement->NextInCol;
         }
         arr->colind[I] = cnt;
@@ -83,28 +57,30 @@ void continuify(GMRESarr *arr) {
         pElement = Matrix->Diag[I]->NextInRow;
         while (pElement != NULL)
         {
-            arr->idx[cnt] = pElement->Col;
-            arr->Precarr[cnt++] = pElement->Real;
+            if (ABS(pElement->Real) > 1e-20) {
+                arr->idx[cnt] = pElement->Col;
+                arr->Precarr[cnt++] = pElement->Real;
+            }
             pElement = pElement->NextInRow;
         }
         arr->rowind[I] = cnt;
     }
-    assert(arr->Prec->Elements == cnt);
 }
 
 void initPreconditoner(MatrixPtr Matrix, double relthres, double absthres, GMRESarr *arr) {
     int error;
     clock_t start = clock();
-    error = SMPpreOrder(arr->Prec);
-    spSetReal(Matrix);
-    error = spOrderAndFactor(arr->Prec, NULL, relthres, absthres, YES);
+    if (!arr->hadPrec) {
+        error = SMPpreOrder(arr->Prec);
+        clock_t endorder = clock();
+        printf("Preconditioner order time: %f\n", (double)(endorder - start) / CLOCKS_PER_SEC);
+        spSetReal(Matrix);
+        error = spOrderAndFactor(arr->Prec, NULL, relthres, absthres, YES);
+    } else {
+        error = spFactor(arr->Prec);
+    }
     clock_t endfactor = clock();
     printf("preconditioner LU factor time: %f\n", (double)(endfactor - start) / CLOCKS_PER_SEC);
-    if (error) {
-        printf("spOrderAndFactor: %d\n", error);
-        fflush(stdout);
-        exit(1);
-    }
 
     if (!arr->hadPrec) {
         printf("New Preconditioner elements: %d\n", arr->Prec->Elements);
@@ -117,7 +93,7 @@ void initPreconditoner(MatrixPtr Matrix, double relthres, double absthres, GMRES
         arr->Precarr = SP_REALLOC(arr->Precarr, double, arr->Prec->Elements);
         arr->idx = SP_REALLOC(arr->idx, int, arr->Prec->Elements);
     }
-    //continuify(arr);
+    continuify(arr);
     clock_t end = clock();
     if (!arr->hadPrec) {
         arr->Prectime += (double) (end - start) / CLOCKS_PER_SEC;
@@ -127,60 +103,13 @@ void initPreconditoner(MatrixPtr Matrix, double relthres, double absthres, GMRES
     arr->PrecNeedReset = 0;
 }
 
-void initGMRES(GMRESarr *arr, int n) {
-    if (arr->n != 0)
-        return;
-    printf("initGMRES\n");
-    printf("n = %d\n", n);
-    arr->n = n;
-    arr->x0 = SP_MALLOC(double, n + 1);
-    for (int i = 1; i <= n; i++)
-        arr->x0[i] = 0.0;
-    arr->r0 = SP_MALLOC(double, n + 1);
-    arr->w = SP_MALLOC(double, n + 1);
-    arr->q = SP_MALLOC(double, n + 1);
-    arr->colind = SP_MALLOC(int, n + 1);
-    arr->rowind = SP_MALLOC(int, n + 1);
-    for (int i = 0; i < GMRESmaxiter + 3; i++)
-        arr->v[i] = SP_MALLOC(double, n + 1);
-    for (int i = 1; i <= GMRESmaxiter + 1; ++i) {
-        for (int j = 1; j <= GMRESmaxiter + 1; ++j) {
-            arr->h[i][j] = 0;
-        }
-    }
-
-    int error;
-    arr->Orig = spCreate(n, 0, &error);
-    arr->ratio = initratio;
-    initGraph(&arr->G, n);
-}
-
-void freeGMRES(GMRESarr *arr) {
-    if (arr->n == 0)
-        return;
-    SP_FREE(arr->x0);
-    SP_FREE(arr->r0);
-    SP_FREE(arr->w);
-    SP_FREE(arr->q);
-    SP_FREE(arr->colind);
-    SP_FREE(arr->rowind);
-    for (int i = 0; i < GMRESmaxiter + 3; i++)
-        SP_FREE(arr->v[i]);
-    SP_FREE(arr->Precarr);
-    SP_FREE(arr->idx);
-    SP_FREE(arr);
-}
-
+//spSolve(arr->Prec, RHS, Solution, NULL, NULL);
 void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
     double *Intermediate;
     RealNumber Temp;
     int I, *pExtOrder, Size;
     MatrixPtr Matrix = arr->Prec;
     int now = 0;
-
-    spSolve(arr->Prec, RHS, Solution, NULL, NULL);
-    return;
-
     Intermediate = Matrix->Intermediate;
     Size = Matrix->Size;
 
@@ -221,71 +150,29 @@ void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
     return;
 }
 
-int convTest (CKTcircuit *ckt) {
-    int i; /* generic loop variable */
-    int size;  /* size of the matrix */
-    CKTnode *node; /* current matrix entry */
-    double old;
-    double new;
-    double tol;
-
-    node = ckt->CKTnodes;
-    size = SMPmatSize(ckt->CKTmatrix);
-    for (i=1;i<=size;i++) {
-        node = node->next;
-        new =  ckt->CKTrhs [i] ;
-        old =  ckt->CKTrhsOld [i] ;
-        if (isnan(new)) {
-            return 1;
-        }
-        if(node->type == SP_VOLTAGE) {
-            tol =  ckt->CKTreltol * (MAX(fabs(old),fabs(new))) +
-                    ckt->CKTvoltTol;
-            if (fabs(new-old) >tol ) {
-                return(1);
-            }
-        } else {
-            tol =  ckt->CKTreltol * (MAX(fabs(old),fabs(new))) +
-                    ckt->CKTabstol;
-            if (fabs(new-old) >tol ) {
-                return(1);
-            }
-        }
-    }
-#ifdef NEWCONV
-    i = CKTconvTest(ckt);
-    if (i)
-    return(i);
-#else /* NEWCONV */
-    return(0);
-#endif /* NEWCONV */
-}
-
-
 int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix, double Gmin, double *RHS, double *Solution)
 {
     clock_t start = clock();
     LoadGmin(origMatrix, Gmin);
     MatrixPtr Matrix = origMatrix;
     int n = Matrix->Size, iters = 0;
-    double eps = GMRESeps;
+    double eps = arr->eps;
     double *x0 = arr->x0;
     double *tmp = SP_MALLOC(double, n + 1);
     int maxiter = GMRESmaxiter;
-    for (int i = 0; i <= n; i++) {
+    double **v = arr->v;
+    double *h[GMRESmaxiter + 3];
+    for (int i = 0; i < GMRESmaxiter + 3; i++)
+        h[i] = arr->h[i];
+    double *c = arr->c, *s = arr->s;
+    double *r0 = arr->r0;
+    double *w = arr->w;
+    double *q = arr->q;
+    for (int i = 1; i <= n; ++i) {
         x0[i] = 1.0;
     }
     for (int reboot = 0; reboot < GMRESreboots; reboot++) {
-        double **v = arr->v;
-        double *h[GMRESmaxiter + 3];
-        for (int i = 0; i < GMRESmaxiter + 3; i++)
-            h[i] = arr->h[i];
-        double *c = arr->c, *s = arr->s;
-        double *r0 = arr->r0;
-        double *w = arr->w;
-        double *q = arr->q;
-        
-        for (int i = 0; i <= n; i++) {
+        for (int i = 1; i <= n; i++) {
             r0[i] = 0.0, w[i] = 0.0, q[i] = 0.0;
         }
         
@@ -313,7 +200,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
                 h[i][j] = c[i] * hij + s[i] * hij1;
                 h[i + 1][j] = -s[i] * hij + c[i] * hij1;
             }
-            if (ABS(h[j + 1][j]) < 1e-16) {
+            if (ABS(h[j + 1][j]) < 1e-20) {
                 m = j;
                 break;
             }
@@ -345,7 +232,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
         printf("relres after iters: %e\n", relres);
         iters += m;
         double *y = arr->y;
-        
+
         //solve h*y = q
         for (int i = m; i >= 1; --i) {
             y[i] = q[i];
@@ -353,24 +240,25 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
                 y[i] -= h[i][j] * y[j];
             }
             y[i] /= h[i][i];
+            if (ABS(h[i][i]) < 1e-16) {
+                printf("h[%d][%d] = %e\n", i, i, h[i][i]);
+            }
         }
 
+        for (int i = 1; i <= n; ++i) {
+            tmp[i] = 0;
+        }
         //x_m = x_0 + Prec^{-1}V_my_m
         for (int i = 1; i <= m; i++) {
-            VectorConstMult(v[i], y[i], tmp, n);
-            fastSolve(arr, tmp, tmp);
-            VectorAdd(x0, tmp, 1, n);
+            VectorAdd(tmp, v[i], y[i], n);
+        }
+        fastSolve(arr, tmp, tmp);
+        VectorAdd(x0, tmp, 1, n);
+
+        if (relres < eps) {
+            break;
         }
 /*
-        double diff = 0;
-        Mult(Matrix, x0, tmp);
-        for (int i = 1; i <= n; i++)
-            diff += (RHS[i] - tmp[i]) * (RHS[i] - tmp[i]);
-        diff = sqrt(diff);
-        printf("GMRES end, real residual: %e\n", diff);
-        diff = diff / Norm(RHS, n);
-        printf("real relative residual: %e\n", diff);
-
         double absdiff = 0, reldiff = 0;
         double totabsdiff = 0, totreldiff = 0;
         for (int i = 1; i <= n; i++) {
@@ -385,19 +273,16 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
         printf("max absdiff: %e max reldiff: %e\n", absdiff, reldiff);
         printf("avg absdiff: %e avg reldiff: %e\n", totabsdiff / n, totreldiff / n);
 */
-
-        for (int I = n; I > 0; I--)
-            Solution[I] = x0[I];
-
-        if (arr->iterno > 1 && !convTest(ckt)) {
-            break;
-        } else {
-            if (arr->iterno == 1 && reboot != 0) {
-                break;
-            }
-            printf("rebooting...\n");
-        }
     }
+    double diff = 0;
+    Mult(Matrix, x0, tmp);
+    for (int i = 1; i <= n; i++)
+        diff += (RHS[i] - tmp[i]) * (RHS[i] - tmp[i]);
+    diff = sqrt(diff);
+    printf("GMRES end, real residual: %e\n", diff);
+    diff = diff / Norm(RHS, n);
+    printf("real relative residual: %e\n", diff);
+
     for (int I = n; I > 0; I--)
         Solution[I] = x0[I];
 
@@ -408,370 +293,47 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
     return iters;
 }
 
-static int ZeroNoncurRow(SMPmatrix *matrix, CKTnode *nodes, int rownum)
-{
-    CKTnode     *n;
-    double      *x;
-    int         currents;
-    currents = 0;
-    for (n = nodes; n; n = n->next) {
-        x = (double *) SMPfindElt(matrix, rownum, n->number, 0);
-        if (x) {
-            if (n->type == SP_CURRENT)
-                currents = 1;
-            else
-                *x = 0.0;
+void initGMRES(GMRESarr *arr, int n) {
+    if (arr->n != 0)
+        return;
+    printf("initGMRES\n");
+    printf("n = %d\n", n);
+    arr->n = n;
+    arr->x0 = SP_MALLOC(double, n + 1);
+    for (int i = 0; i <= n; i++)
+        arr->x0[i] = 0.0;
+    arr->r0 = SP_MALLOC(double, n + 1);
+    arr->w = SP_MALLOC(double, n + 1);
+    arr->q = SP_MALLOC(double, n + 1);
+    arr->colind = SP_MALLOC(int, n + 1);
+    arr->rowind = SP_MALLOC(int, n + 1);
+    for (int i = 0; i < GMRESmaxiter + 3; i++)
+        arr->v[i] = SP_MALLOC(double, n + 1);
+    for (int i = 1; i <= GMRESmaxiter + 1; ++i) {
+        for (int j = 1; j <= GMRESmaxiter + 1; ++j) {
+            arr->h[i][j] = 0;
         }
     }
-    return currents;
-}
 
-int isLinear(char *name) {
-    if (strcmp(name, "Resistor") == 0) {
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
-#define FREE(x) do { if(x) { txfree(x); (x) = NULL; } } while(0)
-//extract the linear components of the circuit while loading matrix
-int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
-    int i;
-    int size;
-    double startTime;
-    CKTnode *node;
     int error;
-#ifdef XSPICE
-    double gshunt;
-    int num_nodes;
-#endif
-    startTime = SPfrontEnd->IFseconds();
-    size = SMPmatSize(ckt->CKTmatrix);
-    for (i = 0; i <= size; i++) {
-        ckt->CKTrhs[i] = 0;
-    }
-    SMPclear(ckt->CKTmatrix);
-    clearGraph(arr->G);
-    for (i = 0; i < DEVmaxnum; i++) {
-        if (DEVices[i] && DEVices[i]->DEVload && ckt->CKThead[i] && isLinear(DEVices[i]->DEVpublic.name)) {
-            error = DEVices[i]->DEVload (ckt->CKThead[i], ckt);
-            if (ckt->CKTnoncon)
-                ckt->CKTtroubleNode = 0;
-            if (error) return(error);
-        }
-    }
-
-    MatrixPtr Matrix = ckt->CKTmatrix;
-    int n = Matrix->Size;
-    //load the linear part into graph
-    for (int I = 1; I <= n; I++) {
-        ElementPtr pElement = Matrix->FirstInCol[I];
-        while (pElement != NULL)
-        {
-            int Row = Matrix->IntToExtRowMap[pElement->Row];
-            int Col = Matrix->IntToExtColMap[I];
-            if (pElement->Real != 0 && Row > Col) {
-                addEdge(arr->G, Row, Col, pElement->Real);
-            }
-            pElement = pElement->NextInCol;
-        }
-    }
-
-    for (i = 0; i < DEVmaxnum; i++) {
-        if (DEVices[i] && DEVices[i]->DEVload && ckt->CKThead[i] && !isLinear(DEVices[i]->DEVpublic.name)) {
-            error = DEVices[i]->DEVload (ckt->CKThead[i], ckt);
-            if (ckt->CKTnoncon)
-                ckt->CKTtroubleNode = 0;
-            if (error) return(error);
-        }
-    }
-
-#ifdef XSPICE
-    g_mif_info.circuit.init = MIF_FALSE;
-    g_mif_info.circuit.anal_init = MIF_FALSE;
-    if (ckt->enh->rshunt_data.enabled) {
-        gshunt = ckt->enh->rshunt_data.gshunt;
-        num_nodes = ckt->enh->rshunt_data.num_nodes;
-        for (i = 0; i < num_nodes; i++) {
-            *(ckt->enh->rshunt_data.diag[i]) += gshunt;
-        }
-    }
-#endif
-    if (ckt->CKTmode & MODEDC) {
-        /* consider doing nodeset & ic assignments */
-        if (ckt->CKTmode & (MODEINITJCT | MODEINITFIX)) {
-            /* do nodesets */
-            for (node = ckt->CKTnodes; node; node = node->next) {
-                if (node->nsGiven) {
-                    printf("node %s\n", node->name);
-                    if (ZeroNoncurRow(ckt->CKTmatrix, ckt->CKTnodes,
-                                      node->number)) {
-                        ckt->CKTrhs[node->number] = 1.0e10 * node->nodeset *
-                                                      ckt->CKTsrcFact;
-                        *(node->ptr) = 1e10;
-                    } else {
-                        ckt->CKTrhs[node->number] = node->nodeset *
-                                                      ckt->CKTsrcFact;
-                        *(node->ptr) = 1;
-                    }
-                }
-            }
-        }
-        if ((ckt->CKTmode & MODETRANOP) && (!(ckt->CKTmode & MODEUIC))) {
-            for (node = ckt->CKTnodes; node; node = node->next) {
-                if (node->icGiven) {
-                    printf("node %s\n", node->name);
-                    if (ZeroNoncurRow(ckt->CKTmatrix, ckt->CKTnodes,
-                                      node->number)) {
-                        ckt->CKTrhs[node->number] = 1.0e10 * node->ic *
-                                                      ckt->CKTsrcFact;
-                        *(node->ptr) += 1.0e10;
-                    } else {
-                        ckt->CKTrhs[node->number] = node->ic*ckt->CKTsrcFact; /* AlansFixes */
-                        *(node->ptr) = 1;
-                    }
-                }
-            }
-        }
-    }
-
-    if (!arr->hadPrec) {
-        arr->Prec = spCreate(n, 0, &error);
-    } else {
-        //SMPdestroy(arr->Prec);
-        SMPclear(arr->Prec);
-        //arr->Prec = spCreate(n, 0, &error);
-    }
-
-    clock_t start = clock();
-    printf("ratio = %f\n", arr->ratio);
-    sparsify(arr->G, arr->ratio);
-    int nnz = 0, orignnz = 0;
-    for (int I = 1; I <= n; I++) {
-        ElementPtr pElement = Matrix->FirstInCol[I];
-        while (pElement != NULL) {
-            int Row = Matrix->IntToExtRowMap[pElement->Row];
-            int Col = Matrix->IntToExtColMap[I];
-            orignnz++;
-            double nv = checkEdge(arr->G, Row, Col, pElement->Real);
-            if (nv != 0 || Row == Col) {
-                ++nnz;
-                if(Row == Col) {
-                    nv += ckt->CKTdiagGmin;
-                }
-                SMPaddElt(arr->Prec, Row, Col, nv);
-            }
-            pElement = pElement->NextInCol;
-        }
-    }
-    printf("nnz in precondtioner: %d\n", nnz);
-    printf("nnz in original matrix: %d\n", orignnz);
-    clock_t end = clock();
-    arr->Prectime = (double)(end - start) / CLOCKS_PER_SEC;
-    printf("preconditioner creation time: %f\n", arr->Prectime);
-    fflush(stdout);
-
-    ckt->CKTstat->STATloadTime += SPfrontEnd->IFseconds()-startTime;
-    return(OK);
+    arr->Orig = spCreate(n, 0, &error);
+    arr->ratio = initratio;
+    arr->eps = GMRESeps;
+    initGraph(&arr->G, n);
 }
 
-int CKTloadUpdate(CKTcircuit *ckt, GMRESarr *arr) {
-    MatrixPtr Matrix = ckt->CKTmatrix;
-    int n = Matrix->Size;
-    SMPclear(arr->Prec);
-    int nnz = 0, orignnz = 0;
-    for (int I = 1; I <= n; I++) {
-        ElementPtr pElement = Matrix->FirstInCol[I];
-        while (pElement != NULL) {
-            int Row = Matrix->IntToExtRowMap[pElement->Row];
-            int Col = Matrix->IntToExtColMap[I];
-            orignnz++;
-            double nv = checkEdge(arr->G, Row, Col, pElement->Real);
-            if (nv != 0 || Row == Col) {
-                ++nnz;
-                if(Row == Col) {
-                    nv += ckt->CKTdiagGmin;
-                }
-                SMPaddElt(arr->Prec, Row, Col, nv);
-            }
-            pElement = pElement->NextInCol;
-        }
-    }
-    return(OK);
-}
-
-int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
-{
-    double startTime, *OldCKTstate0 = NULL;
-    int error, i, j;
-
-    int iterno = 0;
-    int ipass = 0;
-
-    /* some convergence issues that get resolved by increasing max iter */
-    if (maxIter < 100)
-        maxIter = 100;
-
-    if ((ckt->CKTmode & MODETRANOP) && (ckt->CKTmode & MODEUIC)) {
-        SWAP(double *, ckt->CKTrhs, ckt->CKTrhsOld);
-        error = CKTload(ckt);
-        if (error)
-            return(error);
-        return(OK);
-    }
-
-#ifdef WANT_SENSE2
-    if (ckt->CKTsenInfo) {
-        error = NIsenReinit(ckt);
-        if (error)
-            return(error);
-    }
-#endif
-
-    if (ckt->CKTniState & NIUNINITIALIZED) {
-        error = NIreinit(ckt);
-        if (error) {
-            return(error);
-        }
-    }
-
-    for (;;) {
-        ckt->CKTnoncon = 0;
-#ifdef NEWPRED
-        if (!(ckt->CKTmode & MODEINITPRED))
-#endif
-        {
-            int firstGMRES = 0;
-            if (arr->PrecNeedReset) {
-                printf("prec needed reset\n");
-                error = CKTloadPreconditioner(ckt, arr);
-                startTime = SPfrontEnd->IFseconds();
-                initPreconditoner(ckt->CKTmatrix, ckt->CKTpivotAbsTol, ckt->CKTpivotRelTol ,arr);
-                ckt->CKTstat->STATdecompTime += SPfrontEnd->IFseconds() - startTime;
-                arr->origiters = 0;
-                arr->totaliters = 0;
-                arr->GMREStime = 0;
-                firstGMRES = 1;
-            } else {
-                error = CKTload(ckt);
-                error = CKTloadUpdate(ckt, arr);
-                initPreconditoner(ckt->CKTmatrix, ckt->CKTpivotAbsTol, ckt->CKTpivotRelTol ,arr);
-            }
-            iterno++;
-            printf("NI iterno = %d\n", iterno);
-            if (error) {
-                ckt->CKTstat->STATnumIter += iterno;
-                FREE(OldCKTstate0);
-                return (error);
-            }
-
-            if (!OldCKTstate0)
-                OldCKTstate0 = TMALLOC(double, ckt->CKTnumStates + 1);
-            memcpy(OldCKTstate0, ckt->CKTstate0,
-                   (size_t) ckt->CKTnumStates * sizeof(double));
-            
-            startTime = SPfrontEnd->IFseconds();
-            arr->iterno = iterno;
-            int iters = gmresSolvePreconditoned(arr, ckt, ckt->CKTmatrix, ckt->CKTdiagGmin, ckt->CKTrhs, ckt->CKTrhs);
-            arr->totaliters += iters;
-            if (iters > 0.9 * GMRESreboots * GMRESmaxiter) {
-                arr->PrecNeedReset = 1;
-                arr->ratio += ratiodiff;
-                printf("ratio increased to %g due to gmres non convergence\n", arr->ratio);
-            }
-            ckt->CKTstat->STATsolveTime +=
-                SPfrontEnd->IFseconds() - startTime;
-
-            ckt->CKTrhs[0] = 0;
-            ckt->CKTrhsSpare[0] = 0;
-            ckt->CKTrhsOld[0] = 0;
-
-            if (iterno > maxIter) {
-                ckt->CKTstat->STATnumIter += iterno;
-                /* we don't use this info during transient analysis */
-                if (ckt->CKTcurrentAnalysis != DOING_TRAN) {
-                    FREE(errMsg);
-                    errMsg = copy("Too many iterations without convergence");
-                }
-                FREE(OldCKTstate0);
-                return(E_ITERLIM);
-            }
-            if ((ckt->CKTnoncon == 0) && (iterno != 1))
-                ckt->CKTnoncon = NIconvTest(ckt);
-            else
-                ckt->CKTnoncon = 1;
-        }
-
-        if ((ckt->CKTnodeDamping != 0) && (ckt->CKTnoncon != 0) &&
-            ((ckt->CKTmode & MODETRANOP) || (ckt->CKTmode & MODEDCOP)) &&
-            (iterno > 1))
-        {
-            CKTnode *node;
-            double diff, maxdiff = 0;
-            for (node = ckt->CKTnodes->next; node; node = node->next)
-                if (node->type == SP_VOLTAGE) {
-                    diff = fabs(ckt->CKTrhs[node->number] - ckt->CKTrhsOld[node->number]);
-                    if (maxdiff < diff)
-                        maxdiff = diff;
-                }
-
-            if (maxdiff > 10) {
-                double damp_factor = 10 / maxdiff;
-                if (damp_factor < 0.1)
-                    damp_factor = 0.1;
-                for (node = ckt->CKTnodes->next; node; node = node->next) {
-                    diff = ckt->CKTrhs[node->number] - ckt->CKTrhsOld[node->number];
-                    ckt->CKTrhs[node->number] =
-                        ckt->CKTrhsOld[node->number] + (damp_factor * diff);
-                }
-                for (i = 0; i < ckt->CKTnumStates; i++) {
-                    diff = ckt->CKTstate0[i] - OldCKTstate0[i];
-                    ckt->CKTstate0[i] = OldCKTstate0[i] + (damp_factor * diff);
-                }
-            }
-        }
-
-        if (ckt->CKTmode & MODEINITFLOAT) {
-            if ((ckt->CKTmode & MODEDC) && ckt->CKThadNodeset) {
-                if (ipass)
-                    ckt->CKTnoncon = ipass;
-                ipass = 0;
-            }
-            if (ckt->CKTnoncon == 0) {
-                ckt->CKTstat->STATnumIter += iterno;
-                FREE(OldCKTstate0);
-                return(OK);
-            }
-        } else if (ckt->CKTmode & MODEINITJCT) {
-            ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFIX;
-            ckt->CKTniState |= NISHOULDREORDER;
-        } else if (ckt->CKTmode & MODEINITFIX) {
-            if (ckt->CKTnoncon == 0)
-                ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
-            ipass = 1;
-        } else if (ckt->CKTmode & MODEINITSMSIG) {
-            ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
-        } else if (ckt->CKTmode & MODEINITTRAN) {
-            if (iterno <= 1)
-                ckt->CKTniState |= NISHOULDREORDER;
-            ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
-        } else if (ckt->CKTmode & MODEINITPRED) {
-            ckt->CKTmode = (ckt->CKTmode & ~INITF) | MODEINITFLOAT;
-        } else {
-            ckt->CKTstat->STATnumIter += iterno;
-            FREE(OldCKTstate0);
-            return(E_INTERN);
-            /* impossible - no such INITF flag! */
-        }
-
-        SWAP(double *, ckt->CKTrhs, ckt->CKTrhsOld);
-
-        if (iterno > 1 && iterno % 6 == 0) {
-            arr->ratio += ratiodiff;
-            printf("ratio increased to %g due to non-convergence\n", arr->ratio);
-            arr->PrecNeedReset = 1;
-        }
-    }
-    /*NOTREACHED*/
+void freeGMRES(GMRESarr *arr) {
+    if (arr->n == 0)
+        return;
+    SP_FREE(arr->x0);
+    SP_FREE(arr->r0);
+    SP_FREE(arr->w);
+    SP_FREE(arr->q);
+    SP_FREE(arr->colind);
+    SP_FREE(arr->rowind);
+    for (int i = 0; i < GMRESmaxiter + 3; i++)
+        SP_FREE(arr->v[i]);
+    SP_FREE(arr->Precarr);
+    SP_FREE(arr->idx);
+    SP_FREE(arr);
 }

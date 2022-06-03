@@ -17,7 +17,8 @@ libsparse_la_SOURCES = \
 libgmres_la_SOURCES = \
 	gmres.c	\
 	gmresutils.h	\
-	gmresutils.c
+	gmresutils.c	\
+	newiter.c
 
 libgraphops_la_SOURCES = \
 	graphops.hpp	\
