@@ -1,4 +1,5 @@
 #include "feGRASS.hpp"
+#include "trialmodel.hpp"
 
 double checkEdge(matGraph *g, int u, int v, double w) {
     return g->checkEdge(u, v, w);
@@ -26,4 +27,16 @@ double findRatio(matGraph *g) {
 
 void clearGraph(matGraph *g) {
     g->clear();
+}
+
+void initTrialModel(trialModel **t, int n) {
+    *t = new trialModel();
+}
+
+void addTrial(trialModel *T, double ratio, double lutime, double gmrestime) {
+    T->addTrial(ratio, lutime, gmrestime);
+}
+
+double getRatio(trialModel *T) {
+    return T->getRatio();
 }

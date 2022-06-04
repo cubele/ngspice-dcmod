@@ -349,7 +349,7 @@ spFactor(MatrixPtr Matrix)
 
     if (Matrix->NeedsOrdering) {
         return spOrderAndFactor( Matrix, NULL,
-                                 0.0, 0.0, DIAG_PIVOTING_AS_DEFAULT );
+                                 0.001, 0.0, DIAG_PIVOTING_AS_DEFAULT );
     }
     if (!Matrix->Partitioned) spPartition( Matrix, spDEFAULT_PARTITION );
     if (Matrix->Complex)

@@ -11,6 +11,7 @@
 #endif
 
 #include "feGRASS.hpp"
+#include "trialmodel.hpp"
 #include "gmresutils.h"
 #include <math.h>
 #include <assert.h>
@@ -82,7 +83,7 @@ void initPreconditoner(MatrixPtr Matrix, double relthres, double absthres, GMRES
     clock_t endfactor = clock();
     printf("preconditioner LU factor time: %f\n", (double)(endfactor - start) / CLOCKS_PER_SEC);
 
-    if (!arr->hadPrec) {
+    if (!arr->hadPrec && arr->LUsize == 0) {
         printf("New Preconditioner elements: %d\n", arr->Prec->Elements);
         arr->LUsize = arr->Prec->Elements;
         arr->Precarr = SP_MALLOC(double, arr->Prec->Elements);
@@ -152,8 +153,6 @@ void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
 
 int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix, double Gmin, double *RHS, double *Solution)
 {
-    clock_t start = clock();
-    LoadGmin(origMatrix, Gmin);
     MatrixPtr Matrix = origMatrix;
     int n = Matrix->Size, iters = 0;
     double eps = arr->eps;
@@ -168,9 +167,6 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
     double *r0 = arr->r0;
     double *w = arr->w;
     double *q = arr->q;
-    for (int i = 1; i <= n; ++i) {
-        x0[i] = 1.0;
-    }
     for (int reboot = 0; reboot < GMRESreboots; reboot++) {
         for (int i = 1; i <= n; i++) {
             r0[i] = 0.0, w[i] = 0.0, q[i] = 0.0;
@@ -200,7 +196,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
                 h[i][j] = c[i] * hij + s[i] * hij1;
                 h[i + 1][j] = -s[i] * hij + c[i] * hij1;
             }
-            if (ABS(h[j + 1][j]) < 1e-20) {
+            if (ABS(h[j + 1][j]) < 1e-16) {
                 m = j;
                 break;
             }
@@ -286,10 +282,8 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
     for (int I = n; I > 0; I--)
         Solution[I] = x0[I];
 
-    clock_t end = clock();
-    arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
-    printf("GMRES time: %g iters: %d\n", (double)(end - start) / CLOCKS_PER_SEC, iters);
     SP_FREE(tmp);
+    printf("GMRES iters: %d\n", iters);
     return iters;
 }
 
@@ -319,7 +313,12 @@ void initGMRES(GMRESarr *arr, int n) {
     arr->Orig = spCreate(n, 0, &error);
     arr->ratio = initratio;
     arr->eps = GMRESeps;
+    arr->precChanged = 0;
+    arr->trialno = 0;
+    arr->NIitercnt = 0;
+    arr->LUsize = 0;
     initGraph(&arr->G, n);
+    initTrialModel(&arr->T, n);
 }
 
 void freeGMRES(GMRESarr *arr) {

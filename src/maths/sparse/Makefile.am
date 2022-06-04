@@ -25,7 +25,8 @@ libgraphops_la_SOURCES = \
 	graphops.cpp	\
 	feGRASS.cpp	\
 	feGRASS.hpp	\
-	graphwrapper.cpp
+	graphwrapper.cpp	\
+	trialmodel.hpp
 
 AM_CPPFLAGS = @AM_CPPFLAGS@ -I$(top_srcdir)/src/include -O2
 AM_CXXFLAGS = -I$(top_srcdir)/src/include -std=c++11 -O2

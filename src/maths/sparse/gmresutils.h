@@ -7,13 +7,13 @@
 #include "spdefs.h"
 #include "spconfig.h"
 #include "feGRASS.hpp"
+#include "trialmodel.hpp"
 
-#define GMRESmaxiter (300)
-#define ratiodiff (0.03)
-#define initratio (0.12)
+#define GMRESmaxiter (500)
+#define ratiodiff (0.02)
+#define initratio (0.10)
 #define GMRESeps (1e-12)
-#define REALeps (1e-6)
-#define GMRESreboots (6)
+#define GMRESreboots (3)
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
     double c[GMRESmaxiter + 3], s[GMRESmaxiter + 3], y[GMRESmaxiter + 3];
@@ -30,11 +30,13 @@ struct GMRESarr{
     int LUsize;
     int *rowind, *colind; //next row/col starts at colind[n]
     int Lsize, Usize;
-    double GMREStime, Prectime;
+    double GMREStime, Prectime, LUtime;
     int origiters, totaliters, extraiters, totalrounds;
-    int hadPrec, PrecNeedReset, iterno, PrecNeedUpdate;
+    int hadPrec, PrecNeedReset, iterno, precChanged, NIitercnt;
 
     matGraph *G;
+    trialModel *T;
+    int trialno;
     double ratio;
 };
 
