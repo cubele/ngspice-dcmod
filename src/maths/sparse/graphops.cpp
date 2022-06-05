@@ -237,7 +237,7 @@ double checkEdge(graph *g, int u, int v, double w, int *nnz) {
     } else {
         for (int i = 0; i < g->del_adj[u].size(); i++) {
             if (g->del_adj[u][i] == v) {
-                w -= g->del_w[u][i];
+                return 0;
             }
         }
         return fabs(w) < 1e-10 ? 0 : w;

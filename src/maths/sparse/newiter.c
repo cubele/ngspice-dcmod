@@ -276,15 +276,14 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                 firstGMRES = 1;
             } else {
                 error = CKTload(ckt);
-                error = CKTloadUpdate(ckt, arr);
                 clock_t start = clock();
+                error = CKTloadUpdate(ckt, arr);
                 initPreconditoner(ckt->CKTmatrix, ckt->CKTpivotRelTol, ckt->CKTpivotAbsTol, arr);
                 clock_t end = clock();
                 printf("preconditioner update time: %f\n", (double)(end - start) / CLOCKS_PER_SEC);
                 if (!arr->precChanged && arr->NIitercnt > 1 && !firsttran) {
                     arr->LUtime += (double)(end - start) / CLOCKS_PER_SEC;
                 }
-                arr->precChanged = 0;
             }
             SMPpreOrder(ckt->CKTmatrix);//just in case
             if (error) {
@@ -303,22 +302,28 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             int iters = gmresSolvePreconditoned(arr, ckt, ckt->CKTmatrix, ckt->CKTdiagGmin, ckt->CKTrhs, ckt->CKTrhs);
             clock_t end = clock();
             printf("gmresSolvetime: %f\n", (double)(end - start) / CLOCKS_PER_SEC);
+            if (iters > GMRESmaxiter * GMRESreboots * 0.95) {
+                arr->ratio += ratiodiff / 3;
+                arr->PrecNeedReset = 1;
+                arr->totalrounds = 0;
+            }
             if (!arr->precChanged && arr->NIitercnt > 1 && !firsttran) {
                 arr->totalrounds++;
                 arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
             }
+            arr->precChanged = 0;
             if (arr->totalrounds >= 3) {
                 addTrial(arr->T, arr->ratio, arr->LUtime / arr->totalrounds, arr->GMREStime / arr->totalrounds);
                 ++arr->trialno;
                 printf("ratio = %f, LUtime = %f, GMREStime = %f\n", arr->ratio, arr->LUtime / arr->totalrounds, arr->GMREStime / arr->totalrounds);
-                if (arr->trialno == 3) {
+                if (arr->trialno == 4) {
                     printf("------------starting ratio calculation------------\n");
                     arr->ratio = getRatio(arr->T);
                     clearGraph(arr->G);
                     arr->PrecNeedReset = 1;
                     arr->hadPrec = 0;
                 } else {
-                    if (arr->trialno < 3) {
+                    if (arr->trialno < 4) {
                         //test run
                         arr->ratio += ratiodiff;
                         arr->PrecNeedReset = 1;
@@ -344,10 +349,6 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                 ckt->CKTnoncon = NIconvTest(ckt);
             else
                 ckt->CKTnoncon = 1;
-        }
-
-        if (iterno > 20) {
-            ckt->CKTnoncon = 0;
         }
 
         if ((ckt->CKTnodeDamping != 0) && (ckt->CKTnoncon != 0) &&

@@ -151,8 +151,7 @@ void fastSolve(GMRESarr *arr, double * RHS, double * Solution) {
     return;
 }
 
-int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix, double Gmin, double *RHS, double *Solution)
-{
+int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix, double Gmin, double *RHS, double *Solution) {
     MatrixPtr Matrix = origMatrix;
     int n = Matrix->Size, iters = 0;
     double eps = arr->eps;
@@ -270,6 +269,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
         printf("avg absdiff: %e avg reldiff: %e\n", totabsdiff / n, totreldiff / n);
 */
     }
+    /*
     double diff = 0;
     Mult(Matrix, x0, tmp);
     for (int i = 1; i <= n; i++)
@@ -278,6 +278,7 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
     printf("GMRES end, real residual: %e\n", diff);
     diff = diff / Norm(RHS, n);
     printf("real relative residual: %e\n", diff);
+*/
 
     for (int I = n; I > 0; I--)
         Solution[I] = x0[I];

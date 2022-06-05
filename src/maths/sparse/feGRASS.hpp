@@ -29,10 +29,11 @@ void feGRASS(int* ai_in,int* aj_in,double* av_in,int M_in,int N_in,int* insparsi
 struct edge {
     int u, v;
     double w;
-    edge(int u, int v, double w) : u(u), v(v), w(w) {}
+    bool in;
+    edge(int u, int v, double w) : u(u), v(v), w(w), in(false) {}
 };
 struct matGraph {
-    int n;
+    int n, now;
     std::vector<std::vector<int>> del_adj;
     std::vector<std::vector<double>> del_w;
     std::vector<double> del_diag;
@@ -48,6 +49,7 @@ struct matGraph {
             del_w[i].clear();
             del_diag[i] = 0;
         }
+        now = 0;
     }
     void clear() {
         edges.clear();

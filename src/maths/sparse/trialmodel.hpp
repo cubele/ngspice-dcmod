@@ -35,17 +35,8 @@ struct trialModel {
     void addTrial(double ratio, double lutime, double gmrestime) {
         trials.push_back(trial(ratio, lutime, gmrestime));
     }
-    double getRatio() {
-        int n = trials.size();
-        if (n < 3) {
-            return -1;
-        }
-        //calculate the quadratic function using the last three trials
-        double x[3] = {trials[n-1].ratio, trials[n-2].ratio, trials[n-3].ratio};
-        double y[3] = {trials[n-1].lutime + trials[n - 1].gmrestime, trials[n-2].lutime + trials[n - 2].gmrestime, trials[n-3].lutime + trials[n - 3].gmrestime};
-        double a[3] = {0, 0, 0};
+    void calCurve(double *x, double *y, double *a) {
         for (int i = 0; i < 3; i++) {
-            printf("ratio: %f time: %f\n", x[i], y[i]);
             double d = 1;
             double t[3] = {1, 0, 0};
             for (int j = 0; j < 3; ++j) {
@@ -64,11 +55,37 @@ struct trialModel {
                 a[j] += t[j];
             }
         }
-        //calculate the ratio based on the smallest value of the quadratic function
-        double ratio = -a[1] / (2*a[2]);
+    }
+    double getRatio() {
+        int n = trials.size();
+        if (n != 4) {
+            return -1;
+        }
+        //calculate the quadratic function using the last three trials
+        double x[3], y[3], a[3];
+        double ratio, mineps = 1e9;
+        for (int i = 0; i < n; ++i) {
+            printf("ratio:%f lutime:%f GMREStime:%f totaltime:%f\n", trials[i].ratio, trials[i].lutime, trials[i].gmrestime, trials[i].lutime + trials[i].gmrestime);
+            int now = 0;
+            for (int j = 0; j < n; ++j) {
+                if (j != i) {
+                    x[now] = trials[j].ratio;
+                    y[now] = trials[j].lutime + trials[j].gmrestime;
+                    now++;
+                }
+            }
+            a[0] = 0, a[1] = 0, a[2] = 0;
+            calCurve(x, y, a);
+            double x0 = trials[i].ratio, y0 = trials[i].lutime + trials[i].gmrestime;
+            double eps = fabs(a[2] * x0 * x0 + a[1] * x0 + a[0] - y0);
+            printf("eps:%f\n", eps);
+            if (eps < mineps) {
+                mineps = eps;
+                ratio = -a[1] / (2 * a[2]);
+            }
+        }
         printf("final ratio: %f\n", ratio);
-        double minratio = std::min(x[0], std::min(x[1], x[2]));
-        ratio = std::max(ratio, minratio);
+        ratio = std::max(ratio, x[0]);
         return ratio;
     }
 };
