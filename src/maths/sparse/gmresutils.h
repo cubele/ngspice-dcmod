@@ -9,7 +9,7 @@
 #include "feGRASS.hpp"
 #include "trialmodel.hpp"
 
-#define GMRESmaxiter (500)
+#define GMRESmaxiter (300)
 #define ratiodiff (0.015)
 #define initratio (0.001)
 #define GMRESeps (1e-8)
