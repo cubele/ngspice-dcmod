@@ -10,9 +10,9 @@
 #include "trialmodel.hpp"
 
 #define GMRESmaxiter (500)
-#define ratiodiff (0.02)
-#define initratio (0.01)
-#define GMRESeps (1e-12)
+#define ratiodiff (0.015)
+#define initratio (0.001)
+#define GMRESeps (1e-8)
 #define GMRESreboots (3)
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
