@@ -10,9 +10,9 @@
 #include "trialmodel.hpp"
 
 #define GMRESmaxiter (500)
-#define ratiodiff (0.015)
-#define initratio (0.075)
-#define GMRESeps (1e-8)
+#define ratiodiff (0.02)
+#define initratio (0.01)
+#define GMRESeps (1e-12)
 #define GMRESreboots (3)
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
@@ -30,12 +30,14 @@ struct GMRESarr{
     int LUsize;
     int *rowind, *colind; //next row/col starts at colind[n]
     int Lsize, Usize;
-    double GMREStime, Prectime, LUtime;
+    double GMREStime, Prectime, LUtime, finalest;
     int origiters, totaliters, extraiters, totalrounds;
-    int hadPrec, PrecNeedReset, iterno, precChanged, NIitercnt;
+    int hadPrec, PrecNeedReset, iterno, precChanged, NIitercnt, stable;
+    int ratioset, precUpdate, keptPrec;
 
     matGraph *G;
     trialModel *T;
+    tempMat *M;
     int trialno;
     double ratio;
 };
@@ -48,5 +50,6 @@ void VectorAdd(double *x, double *y, double b, int n);
 void PrintVector(double *x, int n);
 void copyMatrix(MatrixPtr Matrix, MatrixPtr dest);
 void LoadGmin(MatrixPtr Matrix, double Gmin);
+void loadMatrix(MatrixPtr Matrix, GMRESarr *arr);
 
 #endif

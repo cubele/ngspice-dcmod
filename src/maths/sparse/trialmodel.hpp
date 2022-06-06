@@ -76,6 +76,7 @@ struct trialModel {
             }
             a[0] = 0, a[1] = 0, a[2] = 0;
             calCurve(x, y, a);
+            printf("a:%f %f %f\n", a[2], a[1], a[0]);
             double x0 = trials[i].ratio, y0 = trials[i].lutime + trials[i].gmrestime;
             double eps = fabs(a[2] * x0 * x0 + a[1] * x0 + a[0] - y0);
             printf("eps:%f\n", eps);
@@ -89,8 +90,32 @@ struct trialModel {
         return ratio;
     }
 };
+
+struct tempMat {
+    int n;
+    std::vector<std::unordered_map<int, double>> mat;
+    tempMat(int n) : n(n) {
+        mat.resize(n + 1);
+    }
+    void add(int i, int j, double val) {
+        mat[i][j] = val;
+    }
+    void clearElem() {
+        for (int i = 1; i <= n; ++i) {
+            mat[i].clear();
+        }
+    }
+    double check(int u, int v) {
+        if (mat[u].find(v) != mat[u].end()) {
+            return mat[u][v];
+        } else {
+            return 0;
+        }
+    }
+};
 #else
 typedef struct trialModel trialModel;
+typedef struct tempMat tempMat;
 #endif
 
 #ifdef __cplusplus
@@ -99,6 +124,10 @@ extern "C" {
 void addTrial(trialModel *T, double ratio, double lutime, double gmrestime);
 void initTrialModel(trialModel **t, int n);
 double getRatio(trialModel *T);
+void inittempMat(tempMat **t, int n);
+void addElem(tempMat *T, int i, int j, double val);
+void clearMat(tempMat *T);
+double checkElem(tempMat *T, int u, int v);
 #ifdef __cplusplus
 }
 #endif

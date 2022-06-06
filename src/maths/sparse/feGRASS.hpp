@@ -14,6 +14,7 @@
 # include <string>
 # include <list>
 # include <stack>
+# include <unordered_map>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,16 +39,19 @@ struct matGraph {
     std::vector<std::vector<double>> del_w;
     std::vector<double> del_diag;
     std::vector<edge> edges;
+    std::vector<std::unordered_map<int, double>> del_map;
     matGraph(int n): n(n) {
         del_adj.resize(n + 1);
         del_w.resize(n + 1);
         del_diag.resize(n + 1);
+        del_map.resize(n + 1);
     }
     void init() {
-        for (int i =  1; i <= n; ++i) {
+        for (int i = 1; i <= n; ++i) {
             del_adj[i].clear();
             del_w[i].clear();
             del_diag[i] = 0;
+            del_map[i].clear();
         }
         now = 0;
     }
@@ -70,10 +74,14 @@ struct matGraph {
         int remm = 0;
         for (int i = 0; i < m; i++) {
             if (in[i] == 0) {
+                del_map[edges[i].u][edges[i].v] = edges[i].w;
+                del_map[edges[i].v][edges[i].u] = edges[i].w;
+                /*
                 del_adj[edges[i].u].push_back(edges[i].v);
                 del_adj[edges[i].v].push_back(edges[i].u);
                 del_w[edges[i].u].push_back(edges[i].w);
                 del_w[edges[i].v].push_back(edges[i].w);
+                */
                 del_diag[edges[i].u] -= edges[i].w;
                 del_diag[edges[i].v] -= edges[i].w;
             } else {
@@ -93,14 +101,13 @@ struct matGraph {
         }
         edges.push_back(edge(u, v, w));
     }
-    double checkEdge(int u, int v, double w) {
+    double checkEdge(int u, int v, double w, int *isedge) {
         if (u == v) {
             return w - del_diag[u];
         } else {
-            for (int i = 0; i < del_adj[u].size(); i++) {
-                if (del_adj[u][i] == v) {
-                    w -= del_w[u][i];
-                }
+            if (del_map[u].find(v) != del_map[u].end()) {
+                *isedge = 1;
+                w -= del_map[u][v];
             }
             return fabs(w) < 1e-20 ? 0.0 : w;
         }
@@ -114,7 +121,7 @@ typedef struct matGraph matGraph;
 #ifdef __cplusplus
 extern "C" {
 #endif
-double checkEdge(matGraph *g, int u, int v, double w);
+double checkEdge(matGraph *g, int u, int v, double w, int *isedge);
 void initGraph(matGraph **g, int n);
 void addEdge(matGraph *g, int u, int v, double w);
 int sparsify(matGraph *g, double p);

@@ -1,8 +1,8 @@
 #include "feGRASS.hpp"
 #include "trialmodel.hpp"
 
-double checkEdge(matGraph *g, int u, int v, double w) {
-    return g->checkEdge(u, v, w);
+double checkEdge(matGraph *g, int u, int v, double w, int *isedge) {
+    return g->checkEdge(u, v, w, isedge);
 }
 
 void initGraph(matGraph **g, int n) {
@@ -39,4 +39,19 @@ void addTrial(trialModel *T, double ratio, double lutime, double gmrestime) {
 
 double getRatio(trialModel *T) {
     return T->getRatio();
+}
+
+void inittempMat(tempMat **t, int n) {
+    *t = new tempMat(n);
+}
+void addElem(tempMat *T, int i, int j, double val) {
+    T->add(i, j, val);
+}
+
+void clearMat(tempMat *T) {
+    T->clearElem();
+}
+
+double checkElem(tempMat *T, int u, int v) {
+    return T->check(u, v);
 }

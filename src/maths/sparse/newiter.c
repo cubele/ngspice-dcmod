@@ -45,27 +45,14 @@ int CKTloadUpdate(CKTcircuit *ckt, GMRESarr *arr) {
     MatrixPtr Matrix = ckt->CKTmatrix;
     int n = Matrix->Size;
     SMPclear(arr->Prec);
-    for (int I = 1; I <= n; I++) {
-        ElementPtr pElement = Matrix->FirstInCol[I];
-        while (pElement != NULL) {
-            int Row = Matrix->IntToExtRowMap[pElement->Row];
-            int Col = Matrix->IntToExtColMap[I];
-            double nv = checkEdge(arr->G, Row, Col, pElement->Real);
-            if (nv != 0 || Row == Col) {
-                if(Row == Col) {
-                    nv += ckt->CKTdiagGmin;
-                }
-                SMPaddElt(arr->Prec, Row, Col, nv);
-            }
-            pElement = pElement->NextInCol;
-        }
-    }
+    loadMatrix(Matrix, arr);
     return(OK);
 }
 
 
 #define FREE(x) do { if(x) { txfree(x); (x) = NULL; } } while(0)
 //extract the linear components of the circuit while loading matrix
+//is called when the preconditioner structure has changed
 int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     int i;
     int size;
@@ -85,6 +72,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     }
     SMPclear(ckt->CKTmatrix);
     if (!arr->hadPrec) {
+        clearGraph(arr->G);
         for (i = 0; i < DEVmaxnum; i++) {
             if (DEVices[i] && DEVices[i]->DEVload && ckt->CKThead[i] && isLinear(DEVices[i]->DEVpublic.name)) {
                 error = DEVices[i]->DEVload (ckt->CKThead[i], ckt);
@@ -179,9 +167,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
     if (!arr->hadPrec) {
         arr->Prec = spCreate(n, 0, &error);
     } else {
-        //SMPdestroy(arr->Prec);
         SMPclear(arr->Prec);
-        //arr->Prec = spCreate(n, 0, &error);
     }
 
     clock_t start = clock();
@@ -194,8 +180,9 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
             int Row = Matrix->IntToExtRowMap[pElement->Row];
             int Col = Matrix->IntToExtColMap[I];
             orignnz++;
-            double nv = checkEdge(arr->G, Row, Col, pElement->Real);
-            if (nv != 0 || Row == Col) {
+            int isedge = 0;
+            double nv = checkEdge(arr->G, Row, Col, pElement->Real, &isedge);
+            if (!isedge || nv != 0 || Row == Col) {
                 ++nnz;
                 if(Row == Col) {
                     nv += ckt->CKTdiagGmin;
@@ -265,24 +252,50 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             iterno++;
             printf("NI iterno = %d\n", iterno);
             int firstGMRES = 0;
+            int calcGMREStime = 0, updateGMREStime = 0;
+            arr->keptPrec = 0;
             if (arr->PrecNeedReset) {
                 printf("Preconditioner structure change\n");
                 error = CKTloadPreconditioner(ckt, arr);
                 initPreconditoner(ckt->CKTmatrix, ckt->CKTpivotRelTol, ckt->CKTpivotAbsTol ,arr);
                 arr->precChanged = 1;
+                arr->stable = 0;
                 arr->LUtime = 0;
                 arr->GMREStime = 0;
                 arr->totalrounds = 0;
                 firstGMRES = 1;
             } else {
-                error = CKTload(ckt);
-                clock_t start = clock();
-                error = CKTloadUpdate(ckt, arr);
-                initPreconditoner(ckt->CKTmatrix, ckt->CKTpivotRelTol, ckt->CKTpivotAbsTol, arr);
-                clock_t end = clock();
-                printf("preconditioner update time: %f\n", (double)(end - start) / CLOCKS_PER_SEC);
-                if (!arr->precChanged && arr->NIitercnt > 1 && !firsttran) {
-                    arr->LUtime += (double)(end - start) / CLOCKS_PER_SEC;
+                if (!arr->ratioset) {
+                    error = CKTload(ckt);
+                    error = CKTloadUpdate(ckt, arr);
+                    clock_t start = clock();
+                    initPreconditoner(ckt->CKTmatrix, ckt->CKTpivotRelTol, ckt->CKTpivotAbsTol, arr);
+                    clock_t end = clock();
+                    printf("preconditioner update time: %f\n", (double)(end - start) / CLOCKS_PER_SEC);
+                    if (arr->stable > 1 && arr->NIitercnt > 1 && !firsttran) {
+                        calcGMREStime = 1;
+                        arr->LUtime += (double)(end - start) / CLOCKS_PER_SEC;
+                    }
+                    if (!arr->precChanged && arr->NIitercnt > 1 && !firsttran) {
+                        ++arr->stable;
+                    }
+                    arr->precChanged = 0;
+                } else {
+                    error = CKTload(ckt);
+                    //if (arr->precUpdate) {
+                    error = CKTloadUpdate(ckt, arr);
+                    clock_t start = clock();
+                    initPreconditoner(ckt->CKTmatrix, ckt->CKTpivotRelTol, ckt->CKTpivotAbsTol, arr);
+                    clock_t end = clock();
+                    printf("preconditioner update time: %f\n", (double)(end - start) / CLOCKS_PER_SEC);
+                    arr->precUpdate = 0;
+                    arr->LUtime = (double)(end - start) / CLOCKS_PER_SEC;
+                    /*
+                    updateGMREStime = 1;
+                    } else {
+                        arr->keptPrec = 1;
+                    }
+                    */
                 }
             }
             SMPpreOrder(ckt->CKTmatrix);//just in case
@@ -302,24 +315,36 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             int iters = gmresSolvePreconditoned(arr, ckt, ckt->CKTmatrix, ckt->CKTdiagGmin, ckt->CKTrhs, ckt->CKTrhs);
             clock_t end = clock();
             printf("gmresSolvetime: %f\n", (double)(end - start) / CLOCKS_PER_SEC);
-            if (iters > GMRESmaxiter * GMRESreboots * 0.95) {
-                arr->ratio += ratiodiff / 3;
+            if (!arr->keptPrec && iters > GMRESmaxiter * GMRESreboots * 0.95) {
+                arr->ratio += ratiodiff / 2;
                 arr->PrecNeedReset = 1;
                 arr->totalrounds = 0;
             }
-            if (!arr->precChanged && arr->NIitercnt > 1 && !firsttran) {
+            if (calcGMREStime) {
                 arr->totalrounds++;
                 arr->GMREStime += (double)(end - start) / CLOCKS_PER_SEC;
             }
-            arr->precChanged = 0;
-            if (arr->totalrounds >= 3) {
+            if (arr->ratioset) {
+                double GMREStime = (double)(end - start) / CLOCKS_PER_SEC;
+                printf("---GMREStime: %f LUtime: %f totaltime: %f---\n", GMREStime, arr->LUtime, GMREStime + arr->LUtime);
+                /*
+                if (GMREStime > arr->finalest) {
+                    arr->precUpdate = 1;
+                    printf("preconditioner update\n");
+                }
+                if (updateGMREStime) {
+                    arr->GMREStime = (double)(end - start) / CLOCKS_PER_SEC;
+                    arr->finalest = arr->GMREStime + arr->LUtime;
+                }
+                */
+            } else if (arr->totalrounds >= 4) {
                 addTrial(arr->T, arr->ratio, arr->LUtime / arr->totalrounds, arr->GMREStime / arr->totalrounds);
                 ++arr->trialno;
                 printf("ratio = %f, LUtime = %f, GMREStime = %f\n", arr->ratio, arr->LUtime / arr->totalrounds, arr->GMREStime / arr->totalrounds);
                 if (arr->trialno == 4) {
                     printf("------------starting ratio calculation------------\n");
                     arr->ratio = getRatio(arr->T);
-                    clearGraph(arr->G);
+                    SMPdestroy(arr->Prec);
                     arr->PrecNeedReset = 1;
                     arr->hadPrec = 0;
                 } else {
@@ -327,6 +352,11 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                         //test run
                         arr->ratio += ratiodiff;
                         arr->PrecNeedReset = 1;
+                    } else {
+                        arr->ratioset = 1;
+                        arr->finalest = arr->LUtime / arr->totalrounds + arr->GMREStime / arr->totalrounds;
+                        printf("------------final ratio = %f------------\n", arr->ratio);
+                        arr->precUpdate = 0;
                     }
                 }
             }
@@ -349,6 +379,12 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
                 ckt->CKTnoncon = NIconvTest(ckt);
             else
                 ckt->CKTnoncon = 1;
+            
+            /*
+            if (iterno > 80) {
+                ckt->CKTnoncon = 0;
+            }
+            */
         }
 
         if ((ckt->CKTnodeDamping != 0) && (ckt->CKTnoncon != 0) &&
@@ -415,15 +451,6 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
 
         SWAP(double *, ckt->CKTrhs, ckt->CKTrhsOld);
         firsttran = 0;
-
-/*
-        if (iterno > 1 && iterno % 10 == 0) {
-            arr->eps = arr->eps / 3;
-            //arr->ratio += ratiodiff;
-            //printf("ratio increased to %g due to non-convergence\n", arr->ratio);
-            //arr->PrecNeedReset = 1;
-        }
-*/
     }
     /*NOTREACHED*/
 }

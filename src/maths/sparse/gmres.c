@@ -44,7 +44,7 @@ void continuify(GMRESarr *arr) {
         arr->Precarr[cnt++] = pPivot->Real;
         pElement = pPivot->NextInCol;
         while (pElement != NULL) {
-            if (ABS(pElement->Real) > 1e-20) {
+            if (ABS(pElement->Real) != 0) {
                 arr->idx[cnt] = pElement->Row;
                 arr->Precarr[cnt++] = pElement->Real;
             }
@@ -58,7 +58,7 @@ void continuify(GMRESarr *arr) {
         pElement = Matrix->Diag[I]->NextInRow;
         while (pElement != NULL)
         {
-            if (ABS(pElement->Real) > 1e-20) {
+            if (ABS(pElement->Real) != 0) {
                 arr->idx[cnt] = pElement->Col;
                 arr->Precarr[cnt++] = pElement->Real;
             }
@@ -166,6 +166,9 @@ int gmresSolvePreconditoned(GMRESarr *arr, CKTcircuit *ckt, MatrixPtr origMatrix
     double *r0 = arr->r0;
     double *w = arr->w;
     double *q = arr->q;
+    for (int i = 1; i <= n; i++) {
+        x0[i] = 0.0;
+    }
     for (int reboot = 0; reboot < GMRESreboots; reboot++) {
         for (int i = 1; i <= n; i++) {
             r0[i] = 0.0, w[i] = 0.0, q[i] = 0.0;
@@ -318,8 +321,12 @@ void initGMRES(GMRESarr *arr, int n) {
     arr->trialno = 0;
     arr->NIitercnt = 0;
     arr->LUsize = 0;
+    arr->stable = 0;
+    arr->ratioset = 0;
+    arr->precUpdate = 0;
     initGraph(&arr->G, n);
     initTrialModel(&arr->T, n);
+    inittempMat(&arr->M, n);
 }
 
 void freeGMRES(GMRESarr *arr) {

@@ -1,4 +1,5 @@
 #include "gmresutils.h"
+#include "trialmodel.hpp"
 
 //Everything is 1-indexed
 //calculate b = Ax
@@ -51,6 +52,37 @@ void copyMatrix(MatrixPtr Matrix, MatrixPtr dest) {
             if (ABS(pElement->Real) > 1e-16) {
                 SMPaddElt(dest, Row, Col, pElement->Real);
             }
+            pElement = pElement->NextInCol;
+        }
+    }
+}
+
+void loadMatrix(MatrixPtr Matrix, GMRESarr *arr) {
+    clearMat(arr->M);
+    int n = Matrix->Size;
+    for (int I = 1; I <= n; I++) {
+        ElementPtr pElement = Matrix->FirstInCol[I];
+        while (pElement != NULL)
+        {
+            int Row = Matrix->IntToExtRowMap[pElement->Row];
+            int Col = Matrix->IntToExtColMap[I];
+            int isedge = 0;
+            double nv = checkEdge(arr->G, Row, Col, pElement->Real, &isedge);
+            if (!isedge || nv != 0 || Row == Col) {
+                addElem(arr->M, Row, Col, nv);
+            }
+            pElement = pElement->NextInCol;
+        }
+    }
+
+    MatrixPtr Prec = arr->Prec;
+    for (int I = 1; I <= n; I++) {
+        ElementPtr pElement = Prec->FirstInCol[I];
+        while (pElement != NULL)
+        {
+            int Row = Prec->IntToExtRowMap[pElement->Row];
+            int Col = Prec->IntToExtColMap[I];
+            pElement->Real = checkElem(arr->M, Row, Col);
             pElement = pElement->NextInCol;
         }
     }
