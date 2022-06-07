@@ -172,7 +172,7 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
 
     clock_t start = clock();
     printf("ratio = %f\n", arr->ratio);
-    int use_old_GS = 1;
+    int use_old_GS = USE_OLD_GS;
     if (use_old_GS) {
         printf("Using old GS\n");
         sparsify_old(arr->G, arr->ratio);

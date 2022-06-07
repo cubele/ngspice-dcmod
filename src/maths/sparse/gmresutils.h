@@ -14,6 +14,7 @@
 #define initratio (0.001)
 #define GMRESeps (1e-8)
 #define GMRESreboots (3)
+#define USE_OLD_GS (0)
 struct GMRESarr{
     double h[GMRESmaxiter + 3][GMRESmaxiter + 3];
     double c[GMRESmaxiter + 3], s[GMRESmaxiter + 3], y[GMRESmaxiter + 3];
