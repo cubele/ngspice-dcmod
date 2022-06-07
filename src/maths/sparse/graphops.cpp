@@ -38,7 +38,6 @@ void graph::constructMST() {
 
 int graph::sparsify(double p) {
     printf("sparsifying graph\n");
-    m = 0;
     printf("%d edges\n", alle.size());
     for (int i = 1; i <= n; ++i) {
         diag[i] = 0, maxw[i] = 0, wd[i] = 0, deg[i] = 0;
