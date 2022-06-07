@@ -14,10 +14,10 @@ extern "C" {
 #include <vector>
 namespace old {
 struct edge {
-    int u, v;
+    int u, v, id;
     double w;
     bool sel;
-    edge(int u, int v, double w) : u(u), v(v), w(w), sel(false) {}
+    edge(int u, int v, double w, int id) : u(u), v(v), w(w), sel(false), id(id) {}
 };
 struct unionset {
     int *parent;
@@ -86,7 +86,8 @@ struct graph {
         delete us;
     }
     void addEdge(int u, int v, double w) {
-        alle.emplace_back(edge(u, v, w));
+        int id = alle.size();
+        alle.emplace_back(edge(u, v, w, id));
     }
     void insEdge(edge e);
     int sparsify(double p);

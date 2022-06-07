@@ -20,25 +20,31 @@ void graph::insEdge(edge e) {
 
 //edges are with negative weights
 void graph::constructMST() {
-    std::sort(alle.begin(), alle.end(), [](edge a, edge b) {
+    std::vector<edge> tempe;
+    for (auto e : alle) {
+        tempe.push_back(e);
+    }
+
+    std::sort(tempe.begin(), tempe.end(), [](edge a, edge b) {
         return -a.w > -b.w;
     });
     for (int i = 1; i <= n; ++i) {
         us->parent[i] = i;
         us->rank[i] = 0;
     }
-    for (int i = 0; i < alle.size(); i++) {
-        if (us->find(alle[i].u) != us->find(alle[i].v)) {
-            insEdge(alle[i]);
-            us->merge(alle[i].u, alle[i].v);
-            alle[i].sel = true;
+    for (int i = 0; i < tempe.size(); i++) {
+        if (us->find(tempe[i].u) != us->find(tempe[i].v)) {
+            insEdge(tempe[i]);
+            us->merge(tempe[i].u, tempe[i].v);
+            alle[tempe[i].id].sel = true;
         }
     }
 }
 
 int graph::sparsify(double p) {
     printf("sparsifying graph\n");
-    printf("%d edges\n", alle.size());
+    int remm = alle.size();
+    printf("%d edges\n", remm);
     for (int i = 1; i <= n; ++i) {
         diag[i] = 0, maxw[i] = 0, wd[i] = 0, deg[i] = 0;
         list[i] = i;
@@ -51,13 +57,16 @@ int graph::sparsify(double p) {
         maxw[alle[i].v] = std::max(maxw[alle[i].v], fabs(alle[i].w));
         alle[i].sel = false;
     }
+    double awd = 0;
     for (int i = 1; i <= n; ++i) {
         if (deg[i] > 0) {
             wd[i] = diag[i] / maxw[i];
+            awd += wd[i];
         } else {
             wd[i] = -1;
         }
     }
+    awd = awd / n;
     std:sort(list.begin() + 1, list.end(), [this](int a, int b) {
         return wd[a] > wd[b];
     });
@@ -66,45 +75,68 @@ int graph::sparsify(double p) {
     }
     for (int i = 1; i <= n; ++i) {
         diag[i] = 0, maxw[i] = 0, deg[i] = 0, swd[i] = 0, del_diag[i] = 0;
-        cande[i].clear();
     }
     constructMST();
-    //edges not in MST
     int tcnt = 0;
+    std::vector<bool> nowsel;
     for (int i = 0; i < alle.size(); i++) {
-        if (!alle[i].sel) {
-            if (order[alle[i].u] > order[alle[i].v]) {
-                std::swap(alle[i].u, alle[i].v);
-            }
-            cande[alle[i].u].push_back(alle[i]);
-        } else {
+        if (alle[i].sel) {
+            nowsel.push_back(true);
             ++tcnt;
+        } else {
+            nowsel.push_back(false);
         }
     }
+    
     printf("%d edges in MST\n", tcnt);
-    for (int i = 1; i <= n; ++i) {
-        int u = list[i], cnt = 0;
-        std::sort(cande[u].begin(), cande[u].end(), [](edge a, edge b) {
-            return -a.w > -b.w;
-        });
-        for (int j = 0; j < cande[u].size(); j++) {
-            if (swd[u] < p * wd[u] && cnt < 2) {
-                insEdge(cande[u][j]);
-                ++cnt;
-            } else {
-                //edges not selected may be selected in the next round
-                if (order[cande[u][j].u] < order[cande[u][j].v]) {
-                    std::swap(cande[u][j].u, cande[u][j].v);
-                    cande[cande[u][j].u].push_back(cande[u][j]);
+    int target = p * n;
+    double y = 1 / awd;
+    double ratioinc = (1 - y) / 20;
+    while (target > 0) {
+        for (int i = 1; i <= n; ++i) {
+            cande[i].clear();
+        }
+        for (int i = 0; i < alle.size(); i++) {
+            if (nowsel[i]) {
+                if (order[alle[i].u] > order[alle[i].v]) {
+                    std::swap(alle[i].u, alle[i].v);
+                }
+                cande[alle[i].u].push_back(alle[i]);
+            }
+        }
+        for (int i = 1; i <= n; ++i) {
+            int u = list[i], cnt = 0;
+            std::sort(cande[u].begin(), cande[u].end(), [](edge a, edge b) {
+                return -a.w > -b.w;
+            });
+            for (int j = 0; j < cande[u].size(); j++) {
+                if (swd[u] < y * wd[u] && cnt < 1) {
+                    insEdge(cande[u][j]);
+                    nowsel[cande[u][j].id] = true;
+                    ++cnt, --target;
                 } else {
-                    del_adj[cande[u][j].u].push_back(cande[u][j].v);
-                    del_adj[cande[u][j].v].push_back(cande[u][j].u);
-                    del_w[cande[u][j].u].push_back(cande[u][j].w);
-                    del_w[cande[u][j].v].push_back(cande[u][j].w);
-                    del_diag[cande[u][j].u] += -cande[u][j].w;
-                    del_diag[cande[u][j].v] += -cande[u][j].w;
+                    //edges not selected may be selected in the next round
+                    if (order[cande[u][j].u] < order[cande[u][j].v]) {
+                        std::swap(cande[u][j].u, cande[u][j].v);
+                        cande[cande[u][j].u].push_back(cande[u][j]);
+                    }
                 }
             }
+            if (target < 0) {
+                break;
+            }
+        }
+        y += ratioinc;
+    }
+
+    for (int i = 0; i < alle.size(); ++i) {
+        if (!nowsel[i]) {
+            del_adj[alle[i].u].push_back(alle[i].v);
+            del_adj[alle[i].v].push_back(alle[i].u);
+            del_w[alle[i].u].push_back(alle[i].w);
+            del_w[alle[i].v].push_back(alle[i].w);
+            del_diag[alle[i].u] -= alle[i].w;
+            del_diag[alle[i].v] -= alle[i].w;
         }
     }
     printf("edges after sparsify: %d n: %d\n", m, n);

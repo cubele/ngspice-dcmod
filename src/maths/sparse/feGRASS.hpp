@@ -34,21 +34,15 @@ struct edge {
 };
 struct matGraph {
     int n, now;
-    std::vector<std::vector<int>> del_adj;
-    std::vector<std::vector<double>> del_w;
     std::vector<double> del_diag;
     std::vector<edge> edges;
     std::vector<std::unordered_map<int, double>> del_map;
     matGraph(int n): n(n) {
-        del_adj.resize(n + 1);
-        del_w.resize(n + 1);
         del_diag.resize(n + 1);
         del_map.resize(n + 1);
     }
     void init() {
         for (int i = 1; i <= n; ++i) {
-            del_adj[i].clear();
-            del_w[i].clear();
             del_diag[i] = 0;
             del_map[i].clear();
         }

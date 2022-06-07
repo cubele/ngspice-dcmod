@@ -10,13 +10,11 @@ int matGraph::sparsify_old(double p) {
     int remm = g.sparsify(p);
     int cnt = 0;
     for (int i = 1; i <= n; i++) {
-        for (int j = 0; j < del_adj[i].size(); ++j) {
-            int v = del_adj[i][j];
-            double w = del_w[i][j];
+        for (int j = 0; j < g.del_adj[i].size(); ++j) {
+            int v = g.del_adj[i][j];
+            double w = g.del_w[i][j];
             del_map[i][v] = w;
-            del_map[v][i] = w;
             del_diag[i] -= w;
-            del_diag[v] -= w;
             ++cnt;
         }
     }
