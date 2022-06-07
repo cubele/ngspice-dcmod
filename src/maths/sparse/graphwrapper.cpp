@@ -17,6 +17,10 @@ int sparsify(matGraph *g, double p) {
     return g->sparsify(p);
 }
 
+int sparsify_old(matGraph *g, double p) {
+    return g->sparsify_old(p);
+}
+
 double findRatio(matGraph *g) {
     for (double p = 0.1; p < 1; p += 0.01) {
         printf("ratio=%f ", p);

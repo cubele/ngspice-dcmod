@@ -85,13 +85,14 @@ struct graph {
     ~graph() {
         delete us;
     }
+    void addEdge(int u, int v, double w) {
+        alle.emplace_back(edge(u, v, w));
+    }
     void insEdge(edge e);
     int sparsify(double p);
     double findBestRatio(int sampleNum);
     void constructMST();
 };
-
-void addEdge(graph *g, int u, int v, double w);
 }
 #endif
 

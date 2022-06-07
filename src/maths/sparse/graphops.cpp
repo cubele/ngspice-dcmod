@@ -4,10 +4,6 @@
 #include "graphops.hpp"
 using namespace old;
 
-void addEdge(graph *g, int u, int v, double w) {
-    g->alle.push_back(edge(u, v, w));
-}
-
 void graph::insEdge(edge e) {
     adj[e.u].push_back(e.v);
     w[e.u].push_back(e.w);
@@ -42,6 +38,8 @@ void graph::constructMST() {
 
 int graph::sparsify(double p) {
     printf("sparsifying graph\n");
+    m = 0;
+    printf("%d edges\n", alle.size());
     for (int i = 1; i <= n; ++i) {
         diag[i] = 0, maxw[i] = 0, wd[i] = 0, deg[i] = 0;
         list[i] = i;
@@ -69,17 +67,22 @@ int graph::sparsify(double p) {
     }
     for (int i = 1; i <= n; ++i) {
         diag[i] = 0, maxw[i] = 0, deg[i] = 0, swd[i] = 0, del_diag[i] = 0;
+        cande[i].clear();
     }
     constructMST();
     //edges not in MST
+    int tcnt = 0;
     for (int i = 0; i < alle.size(); i++) {
         if (!alle[i].sel) {
             if (order[alle[i].u] > order[alle[i].v]) {
                 std::swap(alle[i].u, alle[i].v);
             }
             cande[alle[i].u].push_back(alle[i]);
+        } else {
+            ++tcnt;
         }
     }
+    printf("%d edges in MST\n", tcnt);
     for (int i = 1; i <= n; ++i) {
         int u = list[i], cnt = 0;
         std::sort(cande[u].begin(), cande[u].end(), [](edge a, edge b) {

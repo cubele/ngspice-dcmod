@@ -119,6 +119,7 @@ double checkEdge(matGraph *g, int u, int v, double w, int *isedge);
 void initGraph(matGraph **g, int n);
 void addEdge(matGraph *g, int u, int v, double w);
 int sparsify(matGraph *g, double p);
+int sparsify_old(matGraph *g, double p);
 double findRatio(matGraph *g);
 void clearGraph(matGraph *g);
 #ifdef __cplusplus

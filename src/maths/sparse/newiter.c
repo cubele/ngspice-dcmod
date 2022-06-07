@@ -172,7 +172,14 @@ int CKTloadPreconditioner(CKTcircuit *ckt, GMRESarr *arr) {
 
     clock_t start = clock();
     printf("ratio = %f\n", arr->ratio);
-    sparsify(arr->G, arr->ratio);
+    int use_old_GS = 1;
+    if (use_old_GS) {
+        printf("Using old GS\n");
+        sparsify_old(arr->G, arr->ratio);
+    } else {
+        printf("Using new GS\n");
+        sparsify(arr->G, arr->ratio);
+    }
     int nnz = 0, orignnz = 0;
     for (int I = 1; I <= n; I++) {
         ElementPtr pElement = Matrix->FirstInCol[I];
