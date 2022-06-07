@@ -380,11 +380,9 @@ int NIiter_fast(CKTcircuit *ckt, GMRESarr *arr, int maxIter)
             else
                 ckt->CKTnoncon = 1;
             
-            /*
-            if (iterno > 80) {
+            if (iterno > 95) {
                 ckt->CKTnoncon = 0;
             }
-            */
         }
 
         if ((ckt->CKTnodeDamping != 0) && (ckt->CKTnoncon != 0) &&
