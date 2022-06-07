@@ -26,7 +26,6 @@ extern "C" {
 #endif
 
 void feGRASS(int* ai_in,int* aj_in,double* av_in,int M_in,int N_in,int* insparsifier_in,double alpha_in);
-
 struct edge {
     int u, v;
     double w;
@@ -76,12 +75,6 @@ struct matGraph {
             if (in[i] == 0) {
                 del_map[edges[i].u][edges[i].v] = edges[i].w;
                 del_map[edges[i].v][edges[i].u] = edges[i].w;
-                /*
-                del_adj[edges[i].u].push_back(edges[i].v);
-                del_adj[edges[i].v].push_back(edges[i].u);
-                del_w[edges[i].u].push_back(edges[i].w);
-                del_w[edges[i].v].push_back(edges[i].w);
-                */
                 del_diag[edges[i].u] -= edges[i].w;
                 del_diag[edges[i].v] -= edges[i].w;
             } else {
@@ -95,6 +88,7 @@ struct matGraph {
         printf("%d edges removed\n", m - remm);
         return remm;
     }
+    int sparsify_old(double p);
     void addEdge(int u, int v, double w) {
         if (u < v) {
             std::swap(u, v);

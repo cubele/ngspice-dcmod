@@ -12,13 +12,13 @@ extern "C" {
 
 #ifdef __cplusplus
 #include <vector>
+namespace old {
 struct edge {
     int u, v;
     double w;
     bool sel;
     edge(int u, int v, double w) : u(u), v(v), w(w), sel(false) {}
 };
-
 struct unionset {
     int *parent;
     int *rank;
@@ -90,27 +90,8 @@ struct graph {
     double findBestRatio(int sampleNum);
     void constructMST();
 };
-#else
-typedef struct edge edge;
-typedef struct graph graph;
-#endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-namespace old {
-    void initGraph(graph **g, int n);
-    void addEdge(graph *g, int u, int v, double w);
-    void addOrigEdge(graph *g, int u, int v, double w);
-    void deleteGraph(graph *g);
-    int sparsify(graph *g, double p);
-    int graphToMatrix(graph *g, MatrixPtr Prec);
-    void clearGraph(graph *g);
-    void setDiag(graph *g, int Row, double diag);
-    double findBestRatio(graph *g, int sampleNum);
-    double checkEdge(graph *g, int u, int v, double w, int *nnz);
-}
-#ifdef __cplusplus
+void addEdge(graph *g, int u, int v, double w);
 }
 #endif
 

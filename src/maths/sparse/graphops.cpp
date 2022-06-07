@@ -2,32 +2,10 @@
 #include <iostream>
 #include <cmath>
 #include "graphops.hpp"
-//ngspice header files written in C
-#ifdef __cplusplus
-extern "C" {
-#endif
-    #include "ngspice/smpdefs.h"
-    #include "ngspice/ngspice.h"
-#ifdef __cplusplus
-}
-#endif
-
 using namespace old;
-
-void initGraph(graph **g, int n) {
-    *g = new graph(n);
-}
-
-void deleteGraph(graph *g) {
-    delete g;
-}
 
 void addEdge(graph *g, int u, int v, double w) {
     g->alle.push_back(edge(u, v, w));
-}
-
-void addOrigEdge(graph *g, int u, int v, double w) {
-    g->orige.push_back(edge(u, v, w));
 }
 
 void graph::insEdge(edge e) {
@@ -131,10 +109,6 @@ int graph::sparsify(double p) {
     return m;
 }
 
-int sparsify(graph *g, double p) {
-    return g->sparsify(p);
-}
-
 double graph::findBestRatio(int sampleNum) {
     for (int i = 1; i <= n; ++i) {
         diag[i] = 0, maxw[i] = 0, wd[i] = 0, deg[i] = 0;
@@ -182,10 +156,6 @@ double graph::findBestRatio(int sampleNum) {
     return ratio;
 }
 
-double findBestRatio(graph *g, int sampleNum) {
-    return g->findBestRatio(sampleNum);
-}
-
 void clearGraph(graph *g) {
     for (int i = 1; i <= g->n; ++i) {
         g->adj[i].clear();
@@ -198,48 +168,4 @@ void clearGraph(graph *g) {
     g->orige.clear();
     g->nowe = 0;
     g->m = 0;
-}
-
-void setDiag(graph *g, int Row, double d) {
-    g->diag[Row] = d;
-}
-
-int graphToMatrix(graph *g, MatrixPtr Prec) {
-    printf("graphToMatrix\n");
-    int n = g->n, nnz = 0;
-    for (int i = 1; i <= n; i++) {
-        g->diag[i] = 0;
-    }
-    for (int i = 1; i <= n; i++) {
-        for (int j = 0; j < g->adj[i].size(); j++) {
-            int v = g->adj[i][j];
-            double w = g->w[i][j];
-            g->diag[i] += w;
-            nnz += 1;
-            SMPaddElt(Prec, i, v, w);
-        }
-    }
-    for (int i = 1; i <= n; ++i) {
-        if (fabs(g->diag[i]) > 1e-16) {
-            SMPaddElt(Prec, i, i, -g->diag[i]);
-            printf("%d %.3lf\n", i, -g->diag[i]);
-            ++nnz;
-        }
-    }
-    printf("nnz: %d\n", nnz);
-    fflush(stdout);
-    return nnz;
-}
-
-double checkEdge(graph *g, int u, int v, double w, int *nnz) {
-    if (u == v) {
-        return w - g->del_diag[u];
-    } else {
-        for (int i = 0; i < g->del_adj[u].size(); i++) {
-            if (g->del_adj[u][i] == v) {
-                return 0;
-            }
-        }
-        return fabs(w) < 1e-10 ? 0 : w;
-    }
 }
