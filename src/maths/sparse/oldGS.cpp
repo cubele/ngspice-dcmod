@@ -18,6 +18,6 @@ int matGraph::sparsify_old(double p) {
             ++cnt;
         }
     }
-    printf("%d edges removed\n", cnt);
+    printf("%d edges removed\n", cnt / 2);
     return remm;
 }

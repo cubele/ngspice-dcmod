@@ -89,15 +89,16 @@ int graph::sparsify(double p) {
     }
     
     printf("%d edges in MST\n", tcnt);
-    int target = p * n;
+    int target = (int)(p * n);
     double y = 1 / awd;
     double ratioinc = (1 - y) / 20;
+    int rcnt = 0;
     while (target > 0) {
         for (int i = 1; i <= n; ++i) {
             cande[i].clear();
         }
         for (int i = 0; i < alle.size(); i++) {
-            if (nowsel[i]) {
+            if (!nowsel[i]) {
                 if (order[alle[i].u] > order[alle[i].v]) {
                     std::swap(alle[i].u, alle[i].v);
                 }
@@ -113,6 +114,7 @@ int graph::sparsify(double p) {
                 if (swd[u] < y * wd[u] && cnt < 1) {
                     insEdge(cande[u][j]);
                     nowsel[cande[u][j].id] = true;
+                    ++rcnt;
                     ++cnt, --target;
                 } else {
                     //edges not selected may be selected in the next round
@@ -139,6 +141,7 @@ int graph::sparsify(double p) {
             del_diag[alle[i].v] -= alle[i].w;
         }
     }
+    printf("%d edges recovered\n", rcnt);
     printf("edges after sparsify: %d n: %d\n", m, n);
     return m;
 }
